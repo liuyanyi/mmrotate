@@ -10,7 +10,7 @@ from mmdet.datasets import CustomDataset
 from PIL import Image
 
 from mmrotate.core.bbox import obb2poly_np, poly2obb_np
-from mmrotate.core.evaluation import eval_map, eval_recalls
+from mmrotate.core.evaluation import eval_map
 from .builder import ROTATED_DATASETS
 
 
@@ -251,14 +251,6 @@ class HRSCDataset(CustomDataset):
             eval_results['mAP'] = sum(mean_aps) / len(mean_aps)
             eval_results.move_to_end('mAP', last=False)
         elif metric == 'recall':
-            gt_bboxes = [ann['bboxes'] for ann in annotations]
-            recalls = eval_recalls(
-                gt_bboxes, results, proposal_nums, iou_thrs, logger=logger)
-            for i, num in enumerate(proposal_nums):
-                for j, iou_thr in enumerate(iou_thrs):
-                    eval_results[f'recall@{num}@{iou_thr}'] = recalls[i, j]
-            if recalls.shape[1] > 1:
-                ar = recalls.mean(axis=1)
-                for i, num in enumerate(proposal_nums):
-                    eval_results[f'AR@{num}'] = ar[i]
+            raise NotImplementedError
+
         return eval_results

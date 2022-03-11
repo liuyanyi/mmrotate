@@ -2,7 +2,7 @@ _base_ = [
     '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_3x.py',
     '../_base_/default_runtime.py'
 ]
-fp16 = dict(loss_scale=dict(init_scale=512))
+
 angle_version = 'le135'
 model = dict(
     type='S2ANet',
@@ -39,7 +39,7 @@ model = dict(
         bbox_coder=dict(
             type='DeltaXYWHAOBBoxCoder',
             angle_range=angle_version,
-            norm_factor=3.14159,
+            norm_factor=1,
             edge_swap=False,
             proj_xy=True,
             target_means=(.0, .0, .0, .0, .0),
@@ -68,7 +68,7 @@ model = dict(
         bbox_coder=dict(
             type='DeltaXYWHAOBBoxCoder',
             angle_range=angle_version,
-            norm_factor=3.14159,
+            norm_factor=1,
             edge_swap=False,
             proj_xy=True,
             target_means=(0.0, 0.0, 0.0, 0.0, 0.0),

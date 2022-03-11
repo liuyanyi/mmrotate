@@ -2,7 +2,7 @@ _base_ = [
     '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_3x.py',
     '../_base_/default_runtime.py'
 ]
-fp16 = dict(loss_scale=dict(init_scale=512))
+# fp16 = dict(loss_scale='dynamic')
 
 angle_version = 'le90'
 model = dict(
@@ -27,7 +27,7 @@ model = dict(
         num_outs=5),
     bbox_head=dict(
         type='RotatedRetinaHead',
-        num_classes=31,
+        num_classes=1,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
