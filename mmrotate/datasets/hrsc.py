@@ -9,8 +9,7 @@ from mmcv import print_log
 from mmdet.datasets import CustomDataset
 from PIL import Image
 
-from mmrotate.core.bbox import obb2poly_np, poly2obb_np
-from mmrotate.core.evaluation import eval_map
+from mmrotate.core import eval_rbbox_map, obb2poly_np, poly2obb_np
 from .builder import ROTATED_DATASETS
 
 
@@ -115,37 +114,34 @@ class HRSCDataset(CustomDataset):
                 else:
                     label = 0
 
-                try:
-                    # Add an extra score to use obb2poly_np
-                    bbox = np.array([[
-                        float(obj.find('mbox_cx').text),
-                        float(obj.find('mbox_cy').text),
-                        float(obj.find('mbox_w').text),
-                        float(obj.find('mbox_h').text),
-                        float(obj.find('mbox_ang').text), 0
-                    ]],
-                                    dtype=np.float32)
+                # Add an extra score to use obb2poly_np
+                bbox = np.array([[
+                    float(obj.find('mbox_cx').text),
+                    float(obj.find('mbox_cy').text),
+                    float(obj.find('mbox_w').text),
+                    float(obj.find('mbox_h').text),
+                    float(obj.find('mbox_ang').text), 0
+                ]],
+                                dtype=np.float32)
 
-                    polygon = obb2poly_np(bbox,
-                                          'le90')[0, :-1].astype(np.float32)
-                    if self.version != 'le90':
-                        bbox = np.array(
-                            poly2obb_np(polygon, self.version),
-                            dtype=np.float32)
-                    else:
-                        bbox = bbox[0, :-1]
-                    head = np.array([
-                        int(obj.find('header_x').text),
-                        int(obj.find('header_y').text)
-                    ],
-                                    dtype=np.int64)
-                except:  # noqa: E722
-                    continue
+                polygon = obb2poly_np(bbox,
+                                      'le90')[0, :-1].astype(np.float32)
+                if self.version != 'le90':
+                    bbox = np.array(
+                        poly2obb_np(polygon, self.version),
+                        dtype=np.float32)
+                else:
+                    bbox = bbox[0, :-1]
+                head = np.array([
+                    int(obj.find('header_x').text),
+                    int(obj.find('header_y').text)
+                ],
+                                dtype=np.int64)
 
-                gt_bboxes.append(bbox)
-                gt_labels.append(label)
-                gt_polygons.append(polygon)
-                gt_headers.append(head)
+            gt_bboxes.append(bbox)
+            gt_labels.append(label)
+            gt_polygons.append(polygon)
+            gt_headers.append(head)
 
             if gt_bboxes:
                 data_info['ann']['bboxes'] = np.array(
@@ -237,7 +233,7 @@ class HRSCDataset(CustomDataset):
             mean_aps = []
             for iou_thr in iou_thrs:
                 print_log(f'\n{"-" * 15}iou_thr: {iou_thr}{"-" * 15}')
-                mean_ap, _ = eval_map(
+                mean_ap, _ = eval_rbbox_map(
                     results,
                     annotations,
                     scale_ranges=scale_ranges,
