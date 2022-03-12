@@ -15,8 +15,7 @@ import torch
 from mmcv.ops import nms_rotated
 from mmdet.datasets.custom import CustomDataset
 
-from mmrotate.core import obb2poly_np, poly2obb_np
-from mmrotate.core.evaluation import eval_rbbox_map
+from mmrotate.core import obb2poly_np, poly2obb_np, eval_rbbox_map
 from .builder import ROTATED_DATASETS
 
 

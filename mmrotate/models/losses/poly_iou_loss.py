@@ -140,6 +140,93 @@ def poly_giou_loss(pred, target, eps=1e-6):
     return loss
 
 
+@weighted_loss
+def poly_diou_loss(pred, target, eps=1e-6):
+    areas1, areas2 = get_bbox_areas(pred), get_bbox_areas(target)
+    pred_poly, target_poly = obb2poly(pred, 'le90'), obb2poly(target, 'le90')
+
+    pred_pts = pred_poly.view(pred_poly.size(0), -1, 2)
+    target_pts = target_poly.view(target_poly.size(0), -1, 2)
+    inter_pts, inter_masks = poly_intersection(pred_pts, target_pts, areas1,
+                                               areas2, eps)
+    overlap = convex_areas(inter_pts, inter_masks)
+
+    union = areas1 + areas2 - overlap + eps
+    ious = (overlap / union).clamp(min=eps)
+
+    ctr_dw = pred[:, 0] - target[:, 0]
+    ctr_dh = pred[:, 1] - target[:, 1]
+
+    d2 = ctr_dw*ctr_dw + ctr_dh*ctr_dh
+
+    w, h = enclosing_box_pca(pred_poly, target_poly)
+
+    c2 = w*w+h*h
+
+    loss = 1 - ious - d2/c2
+    return loss
+
+
+def enclosing_box_pca(corners1: torch.Tensor, corners2: torch.Tensor):
+    """calculate the rotated smallest enclosing box using PCA
+    Args:
+        corners1 (torch.Tensor): (N, 8)
+        corners2 (torch.Tensor): (N, 8)
+
+    Returns:
+        w (torch.Tensor): (N)
+        h (torch.Tensor): (N)
+    """
+    corners1 = corners1.reshape(-1, 4, 2)   # (N, 4, 2)
+    corners2 = corners2.reshape(-1, 4, 2)   # (N, 4, 2)
+
+    c = torch.cat([corners1, corners2], dim=1)      # (N, 8, 2)
+    c = c - torch.mean(c, dim=1, keepdim=True)  # normalization
+    ct = c.transpose(1, 2)  # (N, 2, 8)
+    ctc = torch.bmm(ct, c)  # (N, 2, 2)
+    # NOTE: the build in symeig is slow!
+    # _, v = ctc.symeig(eigenvectors=True)
+    # v1 = v[:, 0, :].unsqueeze(1)
+    # v2 = v[:, 1, :].unsqueeze(1)
+    v1, v2 = eigenvector_22(ctc)
+    v1 = v1.unsqueeze(1)  # (N, 1, 2), eigen value
+    v2 = v2.unsqueeze(1)
+    p1 = torch.sum(c * v1, dim=-1)  # (N, 8), first principle component
+    p2 = torch.sum(c * v2, dim=-1)  # (N, 8), second principle component
+    w = p1.max(dim=-1)[0] - p1.min(dim=-1)[0]  # (N, ),  width of rotated enclosing box
+    h = p2.max(dim=-1)[0] - p2.min(dim=-1)[0]  # (N, ),  height of rotated enclosing box
+    return w, h
+
+
+def eigenvector_22(x: torch.Tensor):
+    """return eigenvector of 2x2 symmetric matrix using closed form
+
+    https://math.stackexchange.com/questions/8672/eigenvalues-and-eigenvectors-of-2-times-2-matrix
+
+    The calculation is done by using double precision
+    Args:
+        x (torch.Tensor): (..., 2, 2), symmetric, semi-definite
+
+    Return:
+        v1 (torch.Tensor): (..., 2)
+        v2 (torch.Tensor): (..., 2)
+    """
+    # NOTE: must use doule precision here! with float the back-prop is very unstable
+    a = x[..., 0, 0].double()
+    c = x[..., 0, 1].double()
+    b = x[..., 1, 1].double()  # (..., )
+    delta = torch.sqrt(a * a + 4 * c * c - 2 * a * b + b * b)
+    v1 = (a - b - delta) / 2. / c
+    v1 = torch.stack([v1, torch.ones_like(v1, dtype=torch.double, device=v1.device)], dim=-1)  # (..., 2)
+    v2 = (a - b + delta) / 2. / c
+    v2 = torch.stack([v2, torch.ones_like(v2, dtype=torch.double, device=v2.device)], dim=-1)  # (..., 2)
+    n1 = torch.sum(v1 * v1, keepdim=True, dim=-1).sqrt()
+    n2 = torch.sum(v2 * v2, keepdim=True, dim=-1).sqrt()
+    v1 = v1 / n1
+    v2 = v2 / n2
+    return v1.float(), v2.float()
+
+
 @ROTATED_LOSSES.register_module()
 class PolyIoULoss(nn.Module):
 
@@ -216,6 +303,47 @@ class PolyGIoULoss(nn.Module):
             assert weight.shape == pred.shape
             weight = weight.mean(-1)
         loss = self.loss_weight * poly_giou_loss(
+            pred,
+            target,
+            weight,
+            eps=self.eps,
+            reduction=reduction,
+            avg_factor=avg_factor,
+            **kwargs)
+        return loss
+
+
+@ROTATED_LOSSES.register_module()
+class PolyDIoULoss(nn.Module):
+
+    def __init__(self, eps=1e-6, reduction='mean', loss_weight=1.0):
+        super(PolyDIoULoss, self).__init__()
+        self.eps = eps
+        self.reduction = reduction
+        self.loss_weight = loss_weight
+
+    def forward(self,
+                pred,
+                target,
+                weight=None,
+                avg_factor=None,
+                reduction_override=None,
+                **kwargs):
+        assert reduction_override in (None, 'none', 'mean', 'sum')
+        reduction = (
+            reduction_override if reduction_override else self.reduction)
+        if (weight is not None) and (not torch.any(weight > 0)) and (
+                reduction != 'none'):
+            if weight.dim() == 2:
+                return (pred * weight).sum()  # 0
+            return (pred * weight.unsqueeze(-1)).sum()  # 0
+        if weight is not None and weight.dim() > 1:
+            # TODO: remove this in the future
+            # reduce the weight of shape (n, 4) to (n,) to match the
+            # iou_loss of shape (n,)
+            assert weight.shape == pred.shape
+            weight = weight.mean(-1)
+        loss = self.loss_weight * poly_diou_loss(
             pred,
             target,
             weight,

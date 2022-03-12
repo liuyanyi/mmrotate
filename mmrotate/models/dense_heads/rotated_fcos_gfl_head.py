@@ -28,8 +28,8 @@ class GFLModeSwitchHook(Hook):
         model = runner.model
         if is_module_wrapper(model):
             model = model.module
-        if (epoch + 1) == self.start_epochs:
-            print_log('Change to QFL.')
+        if (epoch + 1) >= self.start_epochs:
+            print_log('Using QFL.')
             model.bbox_head.use_qfl = True
 
 
@@ -110,7 +110,6 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         self.center_sampling = center_sampling
         self.center_sample_radius = center_sample_radius
         self.norm_on_bbox = norm_on_bbox
-        # Modify by hook
 
         super().__init__(
             num_classes,
@@ -120,6 +119,7 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
             norm_cfg=norm_cfg,
             init_cfg=init_cfg,
             **kwargs)
+        # Modify by hook
         self.use_qfl = False
         self.loss_qfl = build_loss(loss_qfl)
 
