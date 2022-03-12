@@ -2,7 +2,7 @@
   "nproc": 10,
   "load_type": "dota",
   "img_dirs": [
-    "data/DOTA1_0/test/images/"
+    "/media/neu/My Passport/datasets/Dota/dota/test/images/"
   ],
   "ann_dirs": null,
   "classes": null,
@@ -27,6 +27,6 @@
     116,
     124
   ],
-  "save_dir": "data/split_ms_dota1_0/test/",
+  "save_dir": "/home/neu/datasets/Dota_mmrotate/dota_ms/test/",
   "save_ext": ".png"
 }

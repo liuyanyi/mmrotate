@@ -2,10 +2,10 @@
   "nproc": 10,
   "load_type": "dota",
   "img_dirs": [
-    "data/DOTA1_0/val/images/"
+    "/datasets/Dota/dota/val/images/"
   ],
   "ann_dirs": [
-    "data/DOTA1_0/val/labelTxt/"
+    "/datasets/Dota/dota/val/labelTxt/"
   ],
   "classes": null,
   "prior_annfile": null,
@@ -29,6 +29,6 @@
     116,
     124
   ],
-  "save_dir": "data/split_ms_dota1_0/val/",
+  "save_dir": "/datasets/Dota_mmrotate/dota_ms/val/",
   "save_ext": ".png"
 }
