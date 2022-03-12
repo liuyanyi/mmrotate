@@ -19,11 +19,9 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                  radius=6,
                  angle_version='oc',
                  loss_angle=dict(
-                     type='FocalLoss',
+                     type='CrossEntropyLoss',
                      use_sigmoid=True,
-                     gamma=2.0,
-                     alpha=0.25,
-                     loss_weight=0.5),
+                     loss_weight=1.0),
                  **kwargs):
         self.omega = omega
         self.angle_version = angle_version
@@ -123,7 +121,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         # angle_targets = self.circular_smooth(angle_targets,
         #                                      self.label_type, self.radius)
         angle_targets = angle_targets.repeat(1, self.coding_len)
-        angle_weights = bbox_weights[:, -1]
+        angle_weights = bbox_weights[:, 4:5]
 
         # TODO Error on focal loss
         loss_angle = self.loss_angle(angle_cls, angle_targets, angle_weights)
