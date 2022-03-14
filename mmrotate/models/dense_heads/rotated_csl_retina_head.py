@@ -1,11 +1,13 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import math
 
 import torch
 import torch.nn as nn
 from mmcv.runner import force_fp32
-from mmdet.core import images_to_levels, multi_apply
+from mmdet.core import images_to_levels, multi_apply, unmap
 
 from mmrotate.core import multiclass_nms_rotated
+from ... import obb2hbb, rotated_anchor_inside_flags
 from ..builder import ROTATED_HEADS, build_loss
 from .rotated_retina_head import RotatedRetinaHead
 
@@ -14,7 +16,8 @@ from .rotated_retina_head import RotatedRetinaHead
 class RotatedCSLRetinaHead(RotatedRetinaHead):
 
     def __init__(self,
-                 label_type='gaussian',
+                 label_type='csl',
+                 label_mode='gaussian',
                  omega=1,
                  radius=6,
                  angle_version='oc',
@@ -22,13 +25,30 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
                      loss_weight=1.0),
+                 init_cfg=dict(
+                     type='Normal',
+                     layer='Conv2d',
+                     std=0.01,
+                     override=[
+                         dict(
+                             type='Normal',
+                             name='retina_cls',
+                             std=0.01,
+                             bias_prob=0.01),
+                         dict(
+                             type='Normal',
+                             name='retina_angle_cls',
+                             std=0.01,
+                             bias_prob=0.01),
+                     ]),
                  **kwargs):
         self.omega = omega
         self.angle_version = angle_version
         self.angle_range = 90 if angle_version == 'oc' else 180
         self.coding_len = self.angle_range // omega
-        super(RotatedCSLRetinaHead, self).__init__(**kwargs)
+        super(RotatedCSLRetinaHead, self).__init__(**kwargs, init_cfg=init_cfg)
         self.label_type = label_type
+        self.label_mode = label_mode
         self.radius = radius
         self.loss_angle = build_loss(loss_angle)
 
@@ -68,8 +88,8 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         return cls_score, bbox_pred, angle_cls
 
     def loss_single(self, cls_score, bbox_pred, angle_cls, anchors, labels,
-                    label_weights, bbox_targets, bbox_weights,
-                    num_total_samples):
+                    label_weights, bbox_targets, bbox_weights, angle_targets,
+                    angle_weights, num_total_samples):
         """Compute loss of a single scale level.
 
         Args:
@@ -116,15 +136,14 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             avg_factor=num_total_samples)
 
         angle_cls = angle_cls.permute(0, 2, 3, 1).reshape(-1, self.coding_len)
-        angle_targets = bbox_targets[:, 4:5]
-        # TODO csl convert
-        # angle_targets = self.circular_smooth(angle_targets,
-        #                                      self.label_type, self.radius)
-        angle_targets = angle_targets.repeat(1, self.coding_len)
-        angle_weights = bbox_weights[:, 4:5]
-
+        angle_targets = angle_targets.reshape(-1, self.coding_len)
+        angle_weights = angle_weights.reshape(-1, 1)
         # TODO Error on focal loss
-        loss_angle = self.loss_angle(angle_cls, angle_targets, angle_weights)
+        loss_angle = self.loss_angle(
+            angle_cls,
+            angle_targets,
+            weight=angle_weights,
+            avg_factor=num_total_samples)
 
         return loss_cls, loss_bbox, loss_angle
 
@@ -176,7 +195,8 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         if cls_reg_targets is None:
             return None
         (labels_list, label_weights_list, bbox_targets_list, bbox_weights_list,
-         num_total_pos, num_total_neg) = cls_reg_targets
+         num_total_pos, num_total_neg, angel_target_list,
+         angel_weight_list) = cls_reg_targets
         num_total_samples = (
             num_total_pos + num_total_neg if self.sampling else num_total_pos)
 
@@ -199,11 +219,130 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             label_weights_list,
             bbox_targets_list,
             bbox_weights_list,
+            angel_target_list,
+            angel_weight_list,
             num_total_samples=num_total_samples)
         return dict(
             loss_cls=losses_cls,
             loss_bbox=losses_bbox,
             losses_angle=losses_angle)
+
+    def _get_targets_single(self,
+                            flat_anchors,
+                            valid_flags,
+                            gt_bboxes,
+                            gt_bboxes_ignore,
+                            gt_labels,
+                            img_meta,
+                            label_channels=1,
+                            unmap_outputs=True):
+        """Compute regression and classification targets for anchors in a
+        single image.
+
+        Args:
+            flat_anchors (torch.Tensor): Multi-level anchors of the image,
+                which are concatenated into a single tensor of shape
+                (num_anchors ,4)
+            valid_flags (torch.Tensor): Multi level valid flags of the image,
+                which are concatenated into a single tensor of
+                    shape (num_anchors,).
+            gt_bboxes (torch.Tensor): Ground truth bboxes of the image,
+                shape (num_gts, 5).
+            img_meta (dict): Meta info of the image.
+            gt_bboxes_ignore (torch.Tensor): Ground truth bboxes to be
+                ignored, shape (num_ignored_gts, 5).
+            img_meta (dict): Meta info of the image.
+            gt_labels (torch.Tensor): Ground truth labels of each box,
+                shape (num_gts,).
+            label_channels (int): Channel of label.
+            unmap_outputs (bool): Whether to map outputs back to the original
+                set of anchors.
+
+        Returns:
+            tuple:
+                labels_list (list[Tensor]): Labels of each level
+                label_weights_list (list[Tensor]): Label weights of each level
+                bbox_targets_list (list[Tensor]): BBox targets of each level
+                bbox_weights_list (list[Tensor]): BBox weights of each level
+                num_total_pos (int): Number of positive samples in all images
+                num_total_neg (int): Number of negative samples in all images
+        """
+        inside_flags = rotated_anchor_inside_flags(
+            flat_anchors, valid_flags, img_meta['img_shape'][:2],
+            self.train_cfg.allowed_border)
+        if not inside_flags.any():
+            return (None, ) * 7
+        # assign gt and sample anchors
+        anchors = flat_anchors[inside_flags, :]
+
+        if self.assign_by_circumhbbox is not None:
+            gt_bboxes_assign = obb2hbb(gt_bboxes, self.assign_by_circumhbbox)
+            assign_result = self.assigner.assign(
+                anchors, gt_bboxes_assign, gt_bboxes_ignore,
+                None if self.sampling else gt_labels)
+        else:
+            assign_result = self.assigner.assign(
+                anchors, gt_bboxes, gt_bboxes_ignore,
+                None if self.sampling else gt_labels)
+
+        sampling_result = self.sampler.sample(assign_result, anchors,
+                                              gt_bboxes)
+
+        num_valid_anchors = anchors.shape[0]
+        bbox_targets = torch.zeros_like(anchors)
+        bbox_weights = torch.zeros_like(anchors)
+        labels = anchors.new_full((num_valid_anchors, ),
+                                  self.num_classes,
+                                  dtype=torch.long)
+        label_weights = anchors.new_zeros(num_valid_anchors, dtype=torch.float)
+
+        pos_inds = sampling_result.pos_inds
+        neg_inds = sampling_result.neg_inds
+        if len(pos_inds) > 0:
+            if not self.reg_decoded_bbox:
+                pos_bbox_targets = self.bbox_coder.encode(
+                    sampling_result.pos_bboxes, sampling_result.pos_gt_bboxes)
+            else:
+                pos_bbox_targets = sampling_result.pos_gt_bboxes
+            bbox_targets[pos_inds, :] = pos_bbox_targets
+            bbox_weights[pos_inds, :] = 1.0
+            if gt_labels is None:
+                # Only rpn gives gt_labels as None
+                # Foreground is the first class since v2.5.0
+                labels[pos_inds] = 0
+            else:
+                labels[pos_inds] = gt_labels[
+                    sampling_result.pos_assigned_gt_inds]
+            if self.train_cfg.pos_weight <= 0:
+                label_weights[pos_inds] = 1.0
+            else:
+                label_weights[pos_inds] = self.train_cfg.pos_weight
+        if len(neg_inds) > 0:
+            label_weights[neg_inds] = 1.0
+
+        # get angle targets and weights
+        angle_targets = bbox_targets[:, 4:5]
+        angle_weights = bbox_weights[:, 4:5]
+        # TODO csl convert
+        angle_targets = self.circular_encode(angle_targets)
+
+        # map up to original set of anchors
+        if unmap_outputs:
+            num_total_anchors = flat_anchors.size(0)
+            labels = unmap(
+                labels, num_total_anchors, inside_flags,
+                fill=self.num_classes)  # fill bg label
+            label_weights = unmap(label_weights, num_total_anchors,
+                                  inside_flags)
+            bbox_targets = unmap(bbox_targets, num_total_anchors, inside_flags)
+            bbox_weights = unmap(bbox_weights, num_total_anchors, inside_flags)
+            angle_targets = unmap(angle_targets, num_total_anchors,
+                                  inside_flags)
+            angle_weights = unmap(angle_weights, num_total_anchors,
+                                  inside_flags)
+
+        return (labels, label_weights, bbox_targets, bbox_weights, pos_inds,
+                neg_inds, sampling_result, angle_targets, angle_weights)
 
     def _get_bboxes_single(self,
                            cls_score_list,
@@ -258,8 +397,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             # TODO Check is it correct
             angle_cls = angle_cls.permute(1, 2, 0).reshape(
                 -1, self.coding_len).sigmoid()
-            angle_cls_ind = torch.argmax(angle_cls, dim=1)
-            angle_pred = (angle_cls_ind * -1 - 0.5) * self.omega
+            angle_pred = self.circular_decode(angle_cls)
 
             bbox_pred[..., -1] = angle_pred
 
@@ -402,5 +540,65 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         return result_list
 
     # TODO CSL convert
-    def circular_smooth(self, angle_targets, label_type, radius):
-        pass
+    def circular_encode(self, angle_targets):
+        # Radius To Degree
+        angle_targets_deg = angle_targets * (180 / math.pi)
+        # Empty Label
+        smooth_label = torch.zeros_like(angle_targets).repeat(
+            1, self.coding_len)
+        if self.label_type == 'csl':
+            # TODO le135, oc, 90是调节正负的, le135应该是45
+            angle_targets_deg = (angle_targets_deg + 90) / self.omega
+            # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
+            angle_targets_long = angle_targets_deg.long()
+            # TODO 反复使用
+            # radius_range = (base_radius_range + angle_targets_long)
+            # % self.angle_range
+
+            if self.label_mode == 'pulse':
+                radius_range = angle_targets_long
+                smooth_value = 1.0
+            elif self.label_mode == 'rect':
+                base_radius_range = torch.arange(
+                    -self.radius,
+                    self.radius,
+                    device=angle_targets_long.device)
+                radius_range = (base_radius_range +
+                                angle_targets_long) % self.angle_range
+                smooth_value = 1.0
+            elif self.label_mode == 'triangle':
+                base_radius_range = torch.arange(
+                    -self.radius,
+                    self.radius,
+                    device=angle_targets_long.device)
+                radius_range = (base_radius_range +
+                                angle_targets_long) % self.angle_range
+                smooth_value = 1.0 - (1 / self.omega) * base_radius_range
+
+            elif self.label_mode == 'gaussian':
+                base_radius_range = torch.arange(
+                    -self.angle_range // 2,
+                    self.angle_range // 2,
+                    device=angle_targets_long.device)
+
+                radius_range = (base_radius_range +
+                                angle_targets_long) % self.angle_range
+                smooth_value = torch.exp(-torch.pow(base_radius_range, 2) /
+                                         (2 * self.radius))
+
+            else:
+                raise NotImplementedError
+
+            # 调整维度
+            if isinstance(smooth_value, torch.Tensor):
+                smooth_value = smooth_value.unsqueeze(0).repeat(
+                    smooth_label.size(0), 1)
+
+            return smooth_label.scatter(1, radius_range, smooth_value)
+        return smooth_label
+
+    def circular_decode(self, angle_clses):
+        angle_cls_inds = torch.argmax(angle_clses, dim=1)
+        angle_pred = (
+            (angle_cls_inds + 0.5) * self.omega) % self.angle_range - 90
+        return angle_pred * (math.pi / 180)

@@ -2,7 +2,7 @@ _base_ = [
     '../_base_/datasets/dotav1.py', '../_base_/schedules/schedule_1x.py',
     '../_base_/default_runtime.py'
 ]
-
+fp16 = dict(loss_scale='dynamic')
 angle_version = 'le90'
 model = dict(
     type='RotatedRetinaNet',
@@ -41,11 +41,12 @@ model = dict(
             type='DeltaXYWHAOBBoxCoder',
             angle_range=angle_version,
             norm_factor=None,
-            edge_swap=True,
-            proj_xy=True,
+            edge_swap=False,
+            proj_xy=False,
             target_means=(.0, .0, .0, .0, .0),
             target_stds=(1.0, 1.0, 1.0, 1.0, 1.0)),
-        label_type='gaussian',
+        label_type='csl',
+        label_mode='gaussian',
         omega=1,
         radius=6,
         angle_version=angle_version,
@@ -57,7 +58,7 @@ model = dict(
             loss_weight=1.0),
         loss_bbox=dict(type='L1Loss', loss_weight=1.0),
         loss_angle=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
+            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=1.0)),
     train_cfg=dict(
         assigner=dict(
             type='MaxIoUAssigner',
