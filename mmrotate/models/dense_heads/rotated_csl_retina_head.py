@@ -573,7 +573,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                     device=angle_targets_long.device)
                 radius_range = (base_radius_range +
                                 angle_targets_long) % self.angle_range
-                smooth_value = 1.0 - (1 / self.omega) * base_radius_range
+                smooth_value = 1.0 - torch.abs((1 / self.radius) * base_radius_range)
 
             elif self.label_mode == 'gaussian':
                 base_radius_range = torch.arange(
@@ -584,7 +584,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 radius_range = (base_radius_range +
                                 angle_targets_long) % self.angle_range
                 smooth_value = torch.exp(-torch.pow(base_radius_range, 2) /
-                                         (2 * self.radius))
+                                         (2 * self.radius**2))
 
             else:
                 raise NotImplementedError
@@ -599,6 +599,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
 
     def circular_decode(self, angle_clses):
         angle_cls_inds = torch.argmax(angle_clses, dim=1)
+        # TODO le135, oc, 90是调节正负的, le135应该是45
         angle_pred = (
             (angle_cls_inds + 0.5) * self.omega) % self.angle_range - 90
         return angle_pred * (math.pi / 180)
