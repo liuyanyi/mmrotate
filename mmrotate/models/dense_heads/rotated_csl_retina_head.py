@@ -45,6 +45,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         self.omega = omega
         self.angle_version = angle_version
         self.angle_range = 90 if angle_version == 'oc' else 180
+        self.angle_offset = 45 if angle_version == 'le135' else 90
         self.coding_len = self.angle_range // omega
         super(RotatedCSLRetinaHead, self).__init__(**kwargs, init_cfg=init_cfg)
         self.label_type = label_type
@@ -290,6 +291,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
 
         num_valid_anchors = anchors.shape[0]
         bbox_targets = torch.zeros_like(anchors)
+        angle_targets = torch.zeros_like(bbox_targets[:, 4:5])
         bbox_weights = torch.zeros_like(anchors)
         labels = anchors.new_full((num_valid_anchors, ),
                                   self.num_classes,
@@ -306,6 +308,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 pos_bbox_targets = sampling_result.pos_gt_bboxes
             bbox_targets[pos_inds, :] = pos_bbox_targets
             bbox_weights[pos_inds, :] = 1.0
+            angle_targets[pos_inds, :] = sampling_result.pos_gt_bboxes[:, 4:5]
             if gt_labels is None:
                 # Only rpn gives gt_labels as None
                 # Foreground is the first class since v2.5.0
@@ -321,7 +324,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             label_weights[neg_inds] = 1.0
 
         # get angle targets and weights
-        angle_targets = bbox_targets[:, 4:5]
+        # angle_targets = bbox_targets[:, 4:5]
         angle_weights = bbox_weights[:, 4:5]
         # TODO csl convert
         angle_targets = self.circular_encode(angle_targets)
@@ -399,7 +402,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 -1, self.coding_len).sigmoid()
             angle_pred = self.circular_decode(angle_cls)
 
-            bbox_pred[..., -1] = angle_pred
+            # bbox_pred[..., -1] = angle_pred
 
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
@@ -415,8 +418,10 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 anchors = anchors[topk_inds, :]
                 bbox_pred = bbox_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
+                angle_pred = angle_pred[topk_inds]
             bboxes = self.bbox_coder.decode(
                 anchors, bbox_pred, max_shape=img_shape)
+            bboxes[..., -1] = angle_pred
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
@@ -548,7 +553,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             1, self.coding_len)
         if self.label_type == 'csl':
             # TODO le135, oc, 90是调节正负的, le135应该是45
-            angle_targets_deg = (angle_targets_deg + 90) / self.omega
+            angle_targets_deg = (angle_targets_deg + self.angle_offset) / self.omega
             # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
             angle_targets_long = angle_targets_deg.long()
             # TODO 反复使用
@@ -564,7 +569,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                     self.radius,
                     device=angle_targets_long.device)
                 radius_range = (base_radius_range +
-                                angle_targets_long) % self.angle_range
+                                angle_targets_long) % self.coding_len
                 smooth_value = 1.0
             elif self.label_mode == 'triangle':
                 base_radius_range = torch.arange(
@@ -572,7 +577,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                     self.radius,
                     device=angle_targets_long.device)
                 radius_range = (base_radius_range +
-                                angle_targets_long) % self.angle_range
+                                angle_targets_long) % self.coding_len
                 smooth_value = 1.0 - torch.abs((1 / self.radius) * base_radius_range)
 
             elif self.label_mode == 'gaussian':
@@ -582,7 +587,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                     device=angle_targets_long.device)
 
                 radius_range = (base_radius_range +
-                                angle_targets_long) % self.angle_range
+                                angle_targets_long) % self.coding_len
                 smooth_value = torch.exp(-torch.pow(base_radius_range, 2) /
                                          (2 * self.radius**2))
 
@@ -601,5 +606,5 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         angle_cls_inds = torch.argmax(angle_clses, dim=1)
         # TODO le135, oc, 90是调节正负的, le135应该是45
         angle_pred = (
-            (angle_cls_inds + 0.5) * self.omega) % self.angle_range - 90
+            (angle_cls_inds + 0.5) * self.omega) % self.angle_range - self.angle_offset
         return angle_pred * (math.pi / 180)
