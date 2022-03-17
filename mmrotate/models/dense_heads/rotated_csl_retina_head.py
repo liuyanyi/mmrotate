@@ -46,7 +46,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         self.angle_version = angle_version
         self.angle_range = 90 if angle_version == 'oc' else 180
         self.angle_offset = 45 if angle_version == 'le135' else 90
-        self.coding_len = self.angle_range // omega
+        self.coding_len = int(self.angle_range // omega)
         super(RotatedCSLRetinaHead, self).__init__(**kwargs, init_cfg=init_cfg)
         self.label_type = label_type
         self.label_mode = label_mode
@@ -553,7 +553,8 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
             1, self.coding_len)
         if self.label_type == 'csl':
             # TODO le135, oc, 90是调节正负的, le135应该是45
-            angle_targets_deg = (angle_targets_deg + self.angle_offset) / self.omega
+            angle_targets_deg = (angle_targets_deg +
+                                 self.angle_offset) / self.omega
             # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
             angle_targets_long = angle_targets_deg.long()
             # TODO 反复使用
@@ -578,7 +579,8 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                     device=angle_targets_long.device)
                 radius_range = (base_radius_range +
                                 angle_targets_long) % self.coding_len
-                smooth_value = 1.0 - torch.abs((1 / self.radius) * base_radius_range)
+                smooth_value = 1.0 - torch.abs(
+                    (1 / self.radius) * base_radius_range)
 
             elif self.label_mode == 'gaussian':
                 base_radius_range = torch.arange(
@@ -605,6 +607,6 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
     def circular_decode(self, angle_clses):
         angle_cls_inds = torch.argmax(angle_clses, dim=1)
         # TODO le135, oc, 90是调节正负的, le135应该是45
-        angle_pred = (
-            (angle_cls_inds + 0.5) * self.omega) % self.angle_range - self.angle_offset
+        angle_pred = ((angle_cls_inds + 0.5) *
+                      self.omega) % self.angle_range - self.angle_offset
         return angle_pred * (math.pi / 180)
