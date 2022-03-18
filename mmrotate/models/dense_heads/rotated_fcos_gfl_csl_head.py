@@ -7,6 +7,7 @@ from mmcv.cnn import Scale
 from mmcv.runner import force_fp32
 from mmdet.core import multi_apply, reduce_mean
 
+from mmrotate.models.utils.angel_coder import build_angle_coder
 from ... import multiclass_nms_rotated, rbbox_overlaps
 from ..builder import ROTATED_HEADS, build_loss
 from .rotated_anchor_free_head import RotatedAnchorFreeHead
@@ -15,7 +16,7 @@ INF = 1e8
 
 
 @ROTATED_HEADS.register_module()
-class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
+class RotatedFCOSGFLCSLHead(RotatedAnchorFreeHead):
     """Anchor-free head used in `FCOS <https://arxiv.org/abs/1904.01355>`_.
     The FCOS head does not use anchor boxes. Instead bounding boxes are
     predicted at each pixel and a centerness measure is used to suppress
@@ -102,6 +103,8 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         self.center_sampling = center_sampling
         self.center_sample_radius = center_sample_radius
         self.norm_on_bbox = norm_on_bbox
+        self.angle_coder = build_angle_coder(angel_coder)
+        self.coding_len = self.angle_coder.coding_len
 
         super().__init__(
             num_classes,
@@ -114,6 +117,7 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         # Modify by hook
         self.use_qfl = False
         self.loss_qfl = build_loss(loss_qfl)
+        self.loss_angle = build_loss(loss_angle)
 
     def _init_predictor(self):
         """Initialize predictor layers of the head."""
@@ -124,9 +128,10 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
     def _init_layers(self):
         """Initialize layers of the head."""
         super()._init_layers()
-        self.conv_theta = nn.Conv2d(self.feat_channels, 1, 3, padding=1)
+        self.conv_theta = nn.Conv2d(
+            self.feat_channels, self.coding_len, 3, padding=1)
         self.scales = nn.ModuleList([Scale(1.0) for _ in self.strides])
-        self.scale_theta = Scale(1.0)
+        # self.scale_theta = Scale(1.0)
 
     def forward(self, feats):
         """Forward features from the upstream network.
@@ -172,14 +177,13 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         else:
             bbox_pred = bbox_pred.exp()
         theta_pred = self.conv_theta(reg_feat)
-        theta_pred = self.scale_theta(theta_pred).float()
-        bbox_pred = torch.cat([bbox_pred, theta_pred], dim=1)
-        return cls_score, bbox_pred
+        return cls_score, bbox_pred, theta_pred
 
-    @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
+    @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'theta_preds'))
     def loss(self,
              cls_scores,
              bbox_preds,
+             theta_preds,
              gt_bboxes,
              gt_labels,
              img_metas,
@@ -210,8 +214,8 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
             featmap_sizes,
             dtype=bbox_preds[0].dtype,
             device=bbox_preds[0].device)
-        labels, bbox_targets = self.get_targets(all_level_points, gt_bboxes,
-                                                gt_labels)
+        labels, bbox_targets, theta_targets = self.get_targets(
+            all_level_points, gt_bboxes, gt_labels)
 
         num_imgs = cls_scores[0].size(0)
         # flatten cls_scores, bbox_preds and centerness
@@ -220,13 +224,19 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
             for cls_score in cls_scores
         ]
         flatten_bbox_preds = [
-            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 5)
+            bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)
             for bbox_pred in bbox_preds
+        ]
+        flatten_theta_preds = [
+            theta_pred.permute(0, 2, 3, 1).reshape(-1, self.coding_len)
+            for theta_pred in theta_preds
         ]
         flatten_cls_scores = torch.cat(flatten_cls_scores)
         flatten_bbox_preds = torch.cat(flatten_bbox_preds)
+        flatten_theta_preds = torch.cat(flatten_theta_preds)
         flatten_labels = torch.cat(labels)
         flatten_bbox_targets = torch.cat(bbox_targets)
+        flatten_theta_targets = torch.cat(theta_targets)
         # repeat points to align with bbox_preds
         flatten_points = torch.cat(
             [points.repeat(num_imgs, 1) for points in all_level_points])
@@ -241,6 +251,14 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
 
         pos_bbox_preds = flatten_bbox_preds[pos_inds]
         pos_bbox_targets = flatten_bbox_targets[pos_inds]
+        pos_theta_preds = flatten_theta_preds[pos_inds]
+        pos_theta_targets = flatten_theta_targets[pos_inds]
+        pos_bbox_preds = torch.cat([
+            pos_bbox_preds,
+            self.angle_coder.soft_decode(pos_theta_preds).unsqueeze(-1)
+        ],
+                                   dim=1)
+
         score = flatten_labels.new_zeros(flatten_labels.shape).float()
 
         if len(pos_inds) > 0:
@@ -261,8 +279,11 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
                 pos_decoded_target_preds,
                 weight=pos_score,
                 avg_factor=pos_score.sum())
+            loss_angle = self.loss_angle(
+                pos_theta_preds, pos_theta_targets, avg_factor=num_pos)
         else:
             loss_bbox = pos_bbox_preds.sum()
+            loss_angle = pos_theta_preds.sum()
 
         if not self.use_qfl:
             loss_cls = self.loss_cls(
@@ -272,7 +293,8 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
                 flatten_cls_scores, (flatten_labels, score),
                 avg_factor=num_pos)
 
-        return dict(loss_cls=loss_cls, loss_bbox=loss_bbox)
+        return dict(
+            loss_cls=loss_cls, loss_bbox=loss_bbox, loss_angle=loss_angle)
 
     def get_targets(self, points, gt_bboxes_list, gt_labels_list):
         """Compute regression, classification and centerness targets for points
@@ -306,7 +328,7 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         num_points = [center.size(0) for center in points]
 
         # get labels and bbox_targets of each image
-        labels_list, bbox_targets_list = multi_apply(
+        labels_list, bbox_targets_list, theta_targets_list = multi_apply(
             self._get_target_single,
             gt_bboxes_list,
             gt_labels_list,
@@ -320,19 +342,28 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
             bbox_targets.split(num_points, 0)
             for bbox_targets in bbox_targets_list
         ]
+        theta_targets_list = [
+            theta_targets.split(num_points, 0)
+            for theta_targets in theta_targets_list
+        ]
 
         # concat per level image
         concat_lvl_labels = []
         concat_lvl_bbox_targets = []
+        concat_lvl_theta_targets = []
         for i in range(num_levels):
             concat_lvl_labels.append(
                 torch.cat([labels[i] for labels in labels_list]))
             bbox_targets = torch.cat(
                 [bbox_targets[i] for bbox_targets in bbox_targets_list])
+            theta_targets = torch.cat(
+                [theta_targets[i] for theta_targets in theta_targets_list])
             if self.norm_on_bbox:
                 bbox_targets[..., :4] = bbox_targets[..., :4] / self.strides[i]
             concat_lvl_bbox_targets.append(bbox_targets)
-        return concat_lvl_labels, concat_lvl_bbox_targets
+            concat_lvl_theta_targets.append(theta_targets)
+        return (concat_lvl_labels, concat_lvl_bbox_targets,
+                concat_lvl_theta_targets)
 
     def _get_target_single(self, gt_bboxes, gt_labels, points, regress_ranges,
                            num_points_per_lvl):
@@ -425,8 +456,9 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         bbox_targets = bbox_targets[range(num_points), min_area_inds]
         theta_targets = gt_thetas[range(num_points), min_area_inds]
         bbox_targets = torch.cat([bbox_targets, theta_targets], dim=1)
+        theta_encode_targets = self.angle_coder.encode(theta_targets)
 
-        return labels, bbox_targets
+        return labels, bbox_targets, theta_encode_targets
 
     def _get_points_single(self,
                            featmap_size,
@@ -449,10 +481,11 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
                              dim=-1) + stride // 2
         return points
 
-    @force_fp32(apply_to=('cls_scores', 'bbox_preds'))
+    @force_fp32(apply_to=('cls_scores', 'bbox_preds', 'theta_pred'))
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
+                   theta_pred,
                    img_metas,
                    cfg=None,
                    rescale=None):
@@ -495,10 +528,14 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
             bbox_pred_list = [
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
+            theta_pred_list = [
+                theta_pred[i][img_id].detach() for i in range(num_levels)
+            ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
             det_bboxes = self._get_bboxes_single(cls_score_list,
-                                                 bbox_pred_list, mlvl_points,
+                                                 bbox_pred_list,
+                                                 theta_pred_list, mlvl_points,
                                                  img_shape, scale_factor, cfg,
                                                  rescale)
             result_list.append(det_bboxes)
@@ -507,6 +544,7 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
     def _get_bboxes_single(self,
                            cls_scores,
                            bbox_preds,
+                           theta_preds,
                            mlvl_points,
                            img_shape,
                            scale_factor,
@@ -540,13 +578,17 @@ class RotatedFCOSGFLHead(RotatedAnchorFreeHead):
         assert len(cls_scores) == len(bbox_preds) == len(mlvl_points)
         mlvl_bboxes = []
         mlvl_scores = []
-        for cls_score, bbox_pred, points in zip(cls_scores, bbox_preds,
-                                                mlvl_points):
+        for cls_score, bbox_pred, theta_pred, points in zip(
+                cls_scores, bbox_preds, theta_preds, mlvl_points):
             assert cls_score.size()[-2:] == bbox_pred.size()[-2:]
             scores = cls_score.permute(1, 2, 0).reshape(
                 -1, self.cls_out_channels).sigmoid()
 
-            bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 5)
+            bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 4)
+            theta_pred = theta_pred.permute(1, 2,
+                                            0).reshape(-1, self.coding_len)
+            theta_pred = self.angle_coder.decode(theta_pred).unsqueeze(-1)
+            bbox_pred = torch.cat([bbox_pred, theta_pred], dim=1)
             nms_pre = cfg.get('nms_pre', -1)
             if nms_pre > 0 and scores.shape[0] > nms_pre:
                 max_scores, _ = scores.max(dim=1)

@@ -83,3 +83,4 @@ data = dict(
     train=dict(pipeline=train_pipeline, version=angle_version),
     val=dict(version=angle_version),
     test=dict(version=angle_version))
+evaluation = dict(interval=6, metric='mAP')

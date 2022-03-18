@@ -4,6 +4,7 @@ from abc import ABCMeta, abstractmethod
 
 import torch
 from mmcv import Registry, build_from_cfg
+from torch import nn
 
 ANGLE_CODER = Registry('angle_coder')
 
@@ -97,6 +98,20 @@ class CSLCoder(BaseAngleCoder):
         angle_pred = ((angle_cls_inds + 0.5) *
                       self.omega) % self.angle_range - self.angle_offset
         return angle_pred * (math.pi / 180)
+
+    def soft_decode(self, angle_preds):
+        angle_cls_inds = self.softargmax1d(angle_preds)
+        angle_pred = ((angle_cls_inds + 0.5) *
+                      self.omega) % self.angle_range - self.angle_offset
+        return angle_pred * (math.pi / 180)
+
+    def softargmax1d(self, input, beta=5000):
+        device = input.device
+        *_, n = input.shape
+        input = nn.functional.softmax(beta * input, dim=-1)
+        indices = torch.linspace(0, 1, n, device=device)
+        result = torch.sum((n - 1) * input * indices, dim=-1)
+        return result
 
 
 @ANGLE_CODER.register_module()
