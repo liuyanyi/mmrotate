@@ -5,19 +5,19 @@ from .kfiou_rotate_retina_refine_head import KFIoURRetinaRefineHead
 from .odm_refine_head import ODMRefineHead
 from .oriented_rpn_head import OrientedRPNHead
 from .rotated_anchor_head import RotatedAnchorHead
-from .rotated_fcos_gfl_head import RotatedFCOSGFLHead, GFLModeSwitchHook
+from .rotated_csl_retina_head import RotatedCSLRetinaHead
+from .rotated_fcos_gfl_head import GFLModeSwitchHook, RotatedFCOSGFLHead
 from .rotated_fcos_head import RotatedFCOSHead
 from .rotated_reppoints_head import RotatedRepPointsHead
 from .rotated_retina_head import RotatedRetinaHead
 from .rotated_retina_refine_head import RotatedRetinaRefineHead
 from .rotated_rpn_head import RotatedRPNHead
 from .sam_reppoints_head import SAMRepPointsHead
-from .rotated_fcos_kfiou_head import RotatedKFIoUFCOSHead
 
 __all__ = [
     'RotatedAnchorHead', 'RotatedRetinaHead', 'RotatedRPNHead',
     'OrientedRPNHead', 'RotatedRetinaRefineHead', 'ODMRefineHead',
     'KFIoURRetinaHead', 'KFIoURRetinaRefineHead', 'KFIoUODMRefineHead',
     'RotatedRepPointsHead', 'SAMRepPointsHead', 'RotatedFCOSHead',
-    'RotatedFCOSGFLHead'
+    'RotatedFCOSGFLHead', 'RotatedCSLRetinaHead', 'GFLModeSwitchHook'
 ]

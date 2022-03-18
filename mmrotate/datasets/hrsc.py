@@ -124,12 +124,10 @@ class HRSCDataset(CustomDataset):
                 ]],
                                 dtype=np.float32)
 
-                polygon = obb2poly_np(bbox,
-                                      'le90')[0, :-1].astype(np.float32)
+                polygon = obb2poly_np(bbox, 'le90')[0, :-1].astype(np.float32)
                 if self.version != 'le90':
                     bbox = np.array(
-                        poly2obb_np(polygon, self.version),
-                        dtype=np.float32)
+                        poly2obb_np(polygon, self.version), dtype=np.float32)
                 else:
                     bbox = bbox[0, :-1]
                 head = np.array([
@@ -138,10 +136,10 @@ class HRSCDataset(CustomDataset):
                 ],
                                 dtype=np.int64)
 
-            gt_bboxes.append(bbox)
-            gt_labels.append(label)
-            gt_polygons.append(polygon)
-            gt_headers.append(head)
+                gt_bboxes.append(bbox)
+                gt_labels.append(label)
+                gt_polygons.append(polygon)
+                gt_headers.append(head)
 
             if gt_bboxes:
                 data_info['ann']['bboxes'] = np.array(
