@@ -1,30 +1,39 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import math
+from abc import ABCMeta, abstractmethod
 
 import torch
+from mmcv import Registry, build_from_cfg
+
+ANGLE_CODER = Registry('angle_coder')
 
 
-class AngelCoder:
-    """Angel Coder for Angel Coded Method such as CSL and DCL.
+def build_angle_coder(cfg, default_args=None):
+    """Builder for Position Encoding."""
+    return build_from_cfg(cfg, ANGLE_CODER, default_args)
 
-    This coder encodes angel into coded label and decodes
-    coded label back to original angel.
 
-    Args:
-        type:
-        angle_version:
-        category_deg:
-        window:
-        radius:
-    """
+class BaseAngleCoder(metaclass=ABCMeta):
+    """Base angle coder."""
 
-    def __init__(self,
-                 type,
-                 angle_version,
-                 omega=1,
-                 window='gaussian',
-                 radius=6):
-        self.type = type
+    def __init__(self, **kwargs):
+        pass
+
+    @abstractmethod
+    def encode(self, angle_targets):
+        """Encode deltas between bboxes and ground truth boxes."""
+
+    @abstractmethod
+    def decode(self, angle_preds):
+        """Decode the predicted bboxes according to prediction and base
+        boxes."""
+
+
+@ANGLE_CODER.register_module()
+class CSLCoder(BaseAngleCoder):
+
+    def __init__(self, angle_version, omega=1, window='gaussian', radius=6):
+        super().__init__()
         self.angle_version = angle_version
         assert angle_version in ['oc', 'le90', 'le135']
         self.angle_range = 90 if angle_version == 'oc' else 180
@@ -32,31 +41,9 @@ class AngelCoder:
         self.omega = omega
         self.window = window
         self.radius = radius
-        if self.type == 'csl':
-            self.coding_len = int(self.angle_range // omega)
-        else:
-            raise NotImplementedError
+        self.coding_len = int(self.angle_range // omega)
 
-    # @property
-    # def coding_length(self):
-
-    def encode(self, angel_targets):
-        if self.type == 'csl':
-            return self.csl_encode(angel_targets)
-        elif self.type == 'dcl':
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
-
-    def decode(self, angel_preds):
-        if self.type == 'csl':
-            return self.csl_decode(angel_preds)
-        elif self.type == 'dcl':
-            raise NotImplementedError
-        else:
-            raise NotImplementedError
-
-    def csl_encode(self, angle_targets):
+    def encode(self, angle_targets):
         # Radius To Degree
         angle_targets_deg = angle_targets * (180 / math.pi)
         # Empty Label
@@ -105,8 +92,34 @@ class AngelCoder:
 
         return smooth_label.scatter(1, radius_range, smooth_value)
 
-    def csl_decode(self, angel_preds):
-        angle_cls_inds = torch.argmax(angel_preds, dim=1)
+    def decode(self, angle_preds):
+        angle_cls_inds = torch.argmax(angle_preds, dim=1)
         angle_pred = ((angle_cls_inds + 0.5) *
                       self.omega) % self.angle_range - self.angle_offset
         return angle_pred * (math.pi / 180)
+
+
+@ANGLE_CODER.register_module()
+class BCLCoder(BaseAngleCoder):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def encode(self, angle_targets):
+        pass
+
+    def decode(self, angle_preds):
+        pass
+
+
+@ANGLE_CODER.register_module()
+class GCLCoder(BaseAngleCoder):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+    def encode(self, angle_targets):
+        pass
+
+    def decode(self, angle_preds):
+        pass
