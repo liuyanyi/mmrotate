@@ -1,5 +1,4 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-import math
 
 import torch
 import torch.nn as nn
@@ -9,6 +8,7 @@ from mmdet.core import images_to_levels, multi_apply, unmap
 from mmrotate.core import multiclass_nms_rotated
 from ... import obb2hbb, rotated_anchor_inside_flags
 from ..builder import ROTATED_HEADS, build_loss
+from ..utils import build_angle_coder
 from .rotated_retina_head import RotatedRetinaHead
 
 
@@ -16,11 +16,13 @@ from .rotated_retina_head import RotatedRetinaHead
 class RotatedCSLRetinaHead(RotatedRetinaHead):
 
     def __init__(self,
-                 label_type='csl',
-                 label_mode='gaussian',
-                 omega=1,
-                 radius=6,
-                 angle_version='oc',
+                 use_encoded_angle=True,
+                 angle_coder=dict(
+                     type='CSLCoder',
+                     angle_version='oc',
+                     omega=1,
+                     window='gaussian',
+                     radius=6),
                  loss_angle=dict(
                      type='CrossEntropyLoss',
                      use_sigmoid=True,
@@ -42,15 +44,10 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                              bias_prob=0.01),
                      ]),
                  **kwargs):
-        self.omega = omega
-        self.angle_version = angle_version
-        self.angle_range = 90 if angle_version == 'oc' else 180
-        self.angle_offset = 45 if angle_version == 'le135' else 90
-        self.coding_len = int(self.angle_range // omega)
+        self.use_encoded_angle = use_encoded_angle
+        self.angle_coder = build_angle_coder(angle_coder)
+        self.coding_len = self.angle_coder.coding_len
         super(RotatedCSLRetinaHead, self).__init__(**kwargs, init_cfg=init_cfg)
-        self.label_type = label_type
-        self.label_mode = label_mode
-        self.radius = radius
         self.loss_angle = build_loss(loss_angle)
 
     def _init_layers(self):
@@ -139,7 +136,6 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
         angle_cls = angle_cls.permute(0, 2, 3, 1).reshape(-1, self.coding_len)
         angle_targets = angle_targets.reshape(-1, self.coding_len)
         angle_weights = angle_weights.reshape(-1, 1)
-        # TODO Error on focal loss
         loss_angle = self.loss_angle(
             angle_cls,
             angle_targets,
@@ -291,8 +287,9 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
 
         num_valid_anchors = anchors.shape[0]
         bbox_targets = torch.zeros_like(anchors)
-        angle_targets = torch.zeros_like(bbox_targets[:, 4:5])
         bbox_weights = torch.zeros_like(anchors)
+        angle_targets = torch.zeros_like(bbox_targets[:, 4:5])
+        angle_weights = torch.zeros_like(bbox_targets[:, 4:5])
         labels = anchors.new_full((num_valid_anchors, ),
                                   self.num_classes,
                                   dtype=torch.long)
@@ -308,7 +305,15 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 pos_bbox_targets = sampling_result.pos_gt_bboxes
             bbox_targets[pos_inds, :] = pos_bbox_targets
             bbox_weights[pos_inds, :] = 1.0
-            angle_targets[pos_inds, :] = sampling_result.pos_gt_bboxes[:, 4:5]
+            if self.use_encoded_angle:
+                # Get encoded angle as target
+                angle_targets[pos_inds, :] = pos_bbox_targets[:, 4:5]
+            else:
+                # Get gt angle as target
+                angle_targets[pos_inds, :] = sampling_result.pos_gt_bboxes[:,
+                                                                           4:5]
+            angle_targets = self.angle_coder.encode(angle_targets)
+            angle_weights[pos_inds, :] = 1.0
             if gt_labels is None:
                 # Only rpn gives gt_labels as None
                 # Foreground is the first class since v2.5.0
@@ -322,12 +327,6 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 label_weights[pos_inds] = self.train_cfg.pos_weight
         if len(neg_inds) > 0:
             label_weights[neg_inds] = 1.0
-
-        # get angle targets and weights
-        # angle_targets = bbox_targets[:, 4:5]
-        angle_weights = bbox_weights[:, 4:5]
-        # TODO csl convert
-        angle_targets = self.circular_encode(angle_targets)
 
         # map up to original set of anchors
         if unmap_outputs:
@@ -397,10 +396,9 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 scores = cls_score.softmax(-1)
             bbox_pred = bbox_pred.permute(1, 2, 0).reshape(-1, 5)
 
-            # TODO Check is it correct
             angle_cls = angle_cls.permute(1, 2, 0).reshape(
                 -1, self.coding_len).sigmoid()
-            angle_pred = self.circular_decode(angle_cls)
+            angle_pred = self.angle_coder.decode(angle_cls)
 
             # bbox_pred[..., -1] = angle_pred
 
@@ -419,9 +417,14 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 bbox_pred = bbox_pred[topk_inds, :]
                 scores = scores[topk_inds, :]
                 angle_pred = angle_pred[topk_inds]
-            bboxes = self.bbox_coder.decode(
-                anchors, bbox_pred, max_shape=img_shape)
-            bboxes[..., -1] = angle_pred
+            if self.use_encoded_angle:
+                bbox_pred[..., -1] = angle_pred
+                bboxes = self.bbox_coder.decode(
+                    anchors, bbox_pred, max_shape=img_shape)
+            else:
+                bboxes = self.bbox_coder.decode(
+                    anchors, bbox_pred, max_shape=img_shape)
+                bboxes[..., -1] = angle_pred
             mlvl_bboxes.append(bboxes)
             mlvl_scores.append(scores)
         mlvl_bboxes = torch.cat(mlvl_bboxes)
@@ -449,7 +452,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
-                   angle_clses,
+                   angle_classes,
                    img_metas,
                    cfg=None,
                    rescale=False,
@@ -523,7 +526,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                 bbox_preds[i][img_id].detach() for i in range(num_levels)
             ]
             angle_cls_list = [
-                angle_clses[i][img_id].detach() for i in range(num_levels)
+                angle_classes[i][img_id].detach() for i in range(num_levels)
             ]
             img_shape = img_metas[img_id]['img_shape']
             scale_factor = img_metas[img_id]['scale_factor']
@@ -543,70 +546,3 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                                                     with_nms)
             result_list.append(proposals)
         return result_list
-
-    # TODO CSL convert
-    def circular_encode(self, angle_targets):
-        # Radius To Degree
-        angle_targets_deg = angle_targets * (180 / math.pi)
-        # Empty Label
-        smooth_label = torch.zeros_like(angle_targets).repeat(
-            1, self.coding_len)
-        if self.label_type == 'csl':
-            # TODO le135, oc, 90是调节正负的, le135应该是45
-            angle_targets_deg = (angle_targets_deg +
-                                 self.angle_offset) / self.omega
-            # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
-            angle_targets_long = angle_targets_deg.long()
-            # TODO 反复使用
-            # radius_range = (base_radius_range + angle_targets_long)
-            # % self.angle_range
-
-            if self.label_mode == 'pulse':
-                radius_range = angle_targets_long
-                smooth_value = 1.0
-            elif self.label_mode == 'rect':
-                base_radius_range = torch.arange(
-                    -self.radius,
-                    self.radius,
-                    device=angle_targets_long.device)
-                radius_range = (base_radius_range +
-                                angle_targets_long) % self.coding_len
-                smooth_value = 1.0
-            elif self.label_mode == 'triangle':
-                base_radius_range = torch.arange(
-                    -self.radius,
-                    self.radius,
-                    device=angle_targets_long.device)
-                radius_range = (base_radius_range +
-                                angle_targets_long) % self.coding_len
-                smooth_value = 1.0 - torch.abs(
-                    (1 / self.radius) * base_radius_range)
-
-            elif self.label_mode == 'gaussian':
-                base_radius_range = torch.arange(
-                    -self.angle_range // 2,
-                    self.angle_range // 2,
-                    device=angle_targets_long.device)
-
-                radius_range = (base_radius_range +
-                                angle_targets_long) % self.coding_len
-                smooth_value = torch.exp(-torch.pow(base_radius_range, 2) /
-                                         (2 * self.radius**2))
-
-            else:
-                raise NotImplementedError
-
-            # 调整维度
-            if isinstance(smooth_value, torch.Tensor):
-                smooth_value = smooth_value.unsqueeze(0).repeat(
-                    smooth_label.size(0), 1)
-
-            return smooth_label.scatter(1, radius_range, smooth_value)
-        return smooth_label
-
-    def circular_decode(self, angle_clses):
-        angle_cls_inds = torch.argmax(angle_clses, dim=1)
-        # TODO le135, oc, 90是调节正负的, le135应该是45
-        angle_pred = ((angle_cls_inds + 0.5) *
-                      self.omega) % self.angle_range - self.angle_offset
-        return angle_pred * (math.pi / 180)

@@ -9,7 +9,7 @@ ANGLE_CODER = Registry('angle_coder')
 
 
 def build_angle_coder(cfg, default_args=None):
-    """Builder for Position Encoding."""
+    """Builder for Angle Encoding."""
     return build_from_cfg(cfg, ANGLE_CODER, default_args)
 
 
@@ -51,7 +51,7 @@ class CSLCoder(BaseAngleCoder):
             1, self.coding_len)
         angle_targets_deg = (angle_targets_deg +
                              self.angle_offset) / self.omega
-        # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
+        # Float to Int
         angle_targets_long = angle_targets_deg.long()
 
         if self.window == 'pulse':
