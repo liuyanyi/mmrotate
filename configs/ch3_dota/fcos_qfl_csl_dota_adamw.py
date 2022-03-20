@@ -11,7 +11,7 @@ model = dict(
             window='gaussian',
             radius=2.5),
         loss_angle=dict(
-            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=0.5),
+            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=1.0),
     ))
 
 optimizer = dict(

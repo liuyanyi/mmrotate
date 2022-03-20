@@ -1,12 +1,12 @@
 _base_ = [
-    '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_3x.py',
+    '../_base_/datasets/hrsc_head.py', '../_base_/schedules/schedule_3x.py',
     '../_base_/default_runtime.py'
 ]
-# fp16 = dict(loss_scale='dynamic')
+fp16 = dict(loss_scale='dynamic')
 
 angle_version = 'le90'
 model = dict(
-    type='RotatedRetinaNet',
+    type='RHRetinaNet',
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -26,7 +26,7 @@ model = dict(
         add_extra_convs='on_input',
         num_outs=5),
     bbox_head=dict(
-        type='RotatedRetinaHead',
+        type='RHRetinaHead',
         num_classes=1,
         in_channels=256,
         stacked_convs=4,
@@ -75,26 +75,23 @@ img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='RResize', img_scale=(800, 800)),
+    dict(type='LoadRHAnnotations', with_bbox=True),
+    dict(type='HRResize', img_scale=(800, 800)),
     dict(
-        type='RRandomFlip',
+        type='RHRandomFlip',
         flip_ratio=[0.25, 0.25, 0.25],
         direction=['horizontal', 'vertical', 'diagonal'],
         version=angle_version),
-    dict(
-        type='PolyRandomRotate',
-        rotate_ratio=0.5,
-        angles_range=180,
-        auto_bound=False,
-        version=angle_version),
+    dict(type='Head2Class'),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
-    dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels'])
+    dict(type='HRDefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_heads'])
 ]
 data = dict(
     train=dict(pipeline=train_pipeline, version=angle_version),
     val=dict(version=angle_version),
     test=dict(version=angle_version))
+# optimizer = dict(
+#     _delete_=True, type='AdamW', lr=0.0001 / 4, weight_decay=0.0001)
 evaluation = dict(interval=1, metric='mAP')

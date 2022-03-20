@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from mmrotate.models.utils.angel_coder import build_angle_coder
+from mmrotate.core.bbox.coder.angel_coder import build_angle_coder
 
 
 def main():

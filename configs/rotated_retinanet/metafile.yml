@@ -16,7 +16,7 @@ Collections:
 Models:
   - Name: rotated_retinanet_obb_r50_fpn_1x_dota_le90
     In Collection: rotated_retinanet
-    Config: configs/rotated_retinanet/rotated_retinanet_obb_r50_fpn_1x_dota_le90.py
+    Config: configs/rotated_retinanet/rethead.py
     Metadata:
       Training Data: DOTAv1.0
     Results:

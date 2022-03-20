@@ -11,6 +11,7 @@ from PIL import Image
 
 from mmrotate.core import eval_rbbox_map, obb2poly_np, poly2obb_np
 from .builder import ROTATED_DATASETS
+from ..core.evaluation.eval_map_with_head import eval_rbbox_head_map
 
 
 @ROTATED_DATASETS.register_module()
@@ -27,7 +28,7 @@ class HRSCDataset(CustomDataset):
     """
 
     CLASSES = None
-    HRSC_CLASS = ('ship', )
+    HRSC_CLASS = ('ship',)
     HRSC_CLASSES = ('ship', 'aircraft carrier', 'warcraft', 'merchant ship',
                     'Nimitz', 'Enterprise', 'Arleigh Burke', 'WhidbeyIsland',
                     'Perry', 'Sanantonio', 'Ticonderoga', 'Kitty Hawk',
@@ -47,12 +48,14 @@ class HRSCDataset(CustomDataset):
                  img_subdir='JPEGImages',
                  ann_subdir='Annotations',
                  classwise=False,
+                 with_head=False,
                  version='oc',
                  **kwargs):
         self.img_subdir = img_subdir
         self.ann_subdir = ann_subdir
         self.classwise = classwise
         self.version = version
+        self.with_head = with_head
         if self.classwise:
             HRSCDataset.CLASSES = self.HRSC_CLASSES
             self.catid2label = {
@@ -122,7 +125,7 @@ class HRSCDataset(CustomDataset):
                     float(obj.find('mbox_h').text),
                     float(obj.find('mbox_ang').text), 0
                 ]],
-                                dtype=np.float32)
+                    dtype=np.float32)
 
                 polygon = obb2poly_np(bbox, 'le90')[0, :-1].astype(np.float32)
                 if self.version != 'le90':
@@ -134,7 +137,18 @@ class HRSCDataset(CustomDataset):
                     int(obj.find('header_x').text),
                     int(obj.find('header_y').text)
                 ],
-                                dtype=np.int64)
+                    dtype=np.int64)
+                # head_offset = head - bbox[0:2]
+                # head_p = head_offset > 0
+                # x_p, y_p = head_p[0], head_p[1]
+                # if (~x_p) & (~y_p):
+                #     head = 0
+                # elif x_p & y_p:
+                #     head = 1
+                # elif (~x_p) & y_p:
+                #     head = 2
+                # elif x_p & (~y_p):
+                #     head = 3
 
                 gt_bboxes.append(bbox)
                 gt_labels.append(label)
@@ -231,15 +245,26 @@ class HRSCDataset(CustomDataset):
             mean_aps = []
             for iou_thr in iou_thrs:
                 print_log(f'\n{"-" * 15}iou_thr: {iou_thr}{"-" * 15}')
-                mean_ap, _ = eval_rbbox_map(
-                    results,
-                    annotations,
-                    scale_ranges=scale_ranges,
-                    iou_thr=iou_thr,
-                    use_07_metric=use_07_metric,
-                    dataset=self.CLASSES,
-                    logger=logger,
-                    nproc=nproc)
+                if not self.with_head:
+                    mean_ap, _ = eval_rbbox_map(
+                        results,
+                        annotations,
+                        scale_ranges=scale_ranges,
+                        iou_thr=iou_thr,
+                        use_07_metric=use_07_metric,
+                        dataset=self.CLASSES,
+                        logger=logger,
+                        nproc=nproc)
+                else:
+                    mean_ap, _ = eval_rbbox_head_map(
+                        results,
+                        annotations,
+                        scale_ranges=scale_ranges,
+                        iou_thr=iou_thr,
+                        use_07_metric=use_07_metric,
+                        dataset=self.CLASSES,
+                        logger=logger,
+                        nproc=nproc)
                 mean_aps.append(mean_ap)
                 eval_results[f'AP{int(iou_thr * 100):02d}'] = round(mean_ap, 3)
             eval_results['mAP'] = sum(mean_aps) / len(mean_aps)

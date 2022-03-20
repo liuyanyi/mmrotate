@@ -255,7 +255,7 @@ class RotatedFCOSGFLCSLHead(RotatedAnchorFreeHead):
         pos_theta_targets = flatten_theta_targets[pos_inds]
         pos_bbox_preds = torch.cat([
             pos_bbox_preds,
-            self.angle_coder.soft_decode(pos_theta_preds).unsqueeze(-1)
+            self.angle_coder.decode(pos_theta_preds).unsqueeze(-1)
         ],
                                    dim=1)
 

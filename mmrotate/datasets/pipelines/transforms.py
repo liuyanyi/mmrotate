@@ -1,6 +1,9 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import cv2
+import mmcv
 import numpy as np
+from mmcv.parallel import DataContainer as DC
+from mmdet.datasets.pipelines import LoadAnnotations, to_tensor, DefaultFormatBundle
 from mmdet.datasets.pipelines.transforms import RandomFlip, Resize
 
 from mmrotate.core import norm_angle, obb2poly_np, poly2obb_np
@@ -89,6 +92,82 @@ class RRandomFlip(RandomFlip):
         else:
             flipped[:, 4] = norm_angle(np.pi - bboxes[:, 4], self.version)
         return flipped.reshape(orig_shape)
+
+
+@ROTATED_PIPELINES.register_module()
+class RHRandomFlip(RRandomFlip):
+
+    def __call__(self, results):
+        """Call function to flip bounding boxes, masks, semantic segmentation
+        maps.
+
+        Args:
+            results (dict): Result dict from loading pipeline.
+
+        Returns:
+            dict: Flipped results, 'flip', 'flip_direction' keys are added \
+                into result dict.
+        """
+
+        if 'flip' not in results:
+            if isinstance(self.direction, list):
+                # None means non-flip
+                direction_list = self.direction + [None]
+            else:
+                # None means non-flip
+                direction_list = [self.direction, None]
+
+            if isinstance(self.flip_ratio, list):
+                non_flip_ratio = 1 - sum(self.flip_ratio)
+                flip_ratio_list = self.flip_ratio + [non_flip_ratio]
+            else:
+                non_flip_ratio = 1 - self.flip_ratio
+                # exclude non-flip
+                single_ratio = self.flip_ratio / (len(direction_list) - 1)
+                flip_ratio_list = [single_ratio] * (len(direction_list) -
+                                                    1) + [non_flip_ratio]
+
+            cur_dir = np.random.choice(direction_list, p=flip_ratio_list)
+
+            results['flip'] = cur_dir is not None
+        if 'flip_direction' not in results:
+            results['flip_direction'] = cur_dir
+        if results['flip']:
+            # flip image
+            for key in results.get('img_fields', ['img']):
+                results[key] = mmcv.imflip(
+                    results[key], direction=results['flip_direction'])
+            # flip bboxes
+            for key in results.get('bbox_fields', []):
+                results[key] = self.bbox_flip(results[key],
+                                              results['img_shape'],
+                                              results['flip_direction'])
+            # flip headers
+            results['gt_heads'] = self.head_flip(results['gt_heads'],
+                                                 results['img_shape'],
+                                                 results['flip_direction'])
+
+        return results
+
+
+    def head_flip(self, heads, img_shape, direction):
+        assert heads.shape[-1] % 2 == 0
+        flipped = heads.copy()
+        if direction == 'horizontal':
+            w = img_shape[1]
+            flipped[..., 0::2] = w - heads[..., 0::2]
+        elif direction == 'vertical':
+            h = img_shape[0]
+            flipped[..., 1::2] = h - heads[..., 1::2]
+        elif direction == 'diagonal':
+            w = img_shape[1]
+            h = img_shape[0]
+            flipped[..., 0::2] = w - heads[..., 0::2]
+            flipped[..., 1::2] = h - heads[..., 1::2]
+        else:
+            raise ValueError(f"Invalid flipping direction '{direction}'")
+        return flipped
+
 
 
 @ROTATED_PIPELINES.register_module()
@@ -240,3 +319,152 @@ class PolyRandomRotate(object):
                     f'angles_range={self.angles_range}, ' \
                     f'auto_bound={self.auto_bound})'
         return repr_str
+
+
+@ROTATED_PIPELINES.register_module()
+class HRResize(RResize):
+
+    def _resize_bboxes(self, results):
+        """Resize bounding boxes with ``results['scale_factor']``."""
+        for key in results.get('bbox_fields', []):
+            bboxes = results[key]
+            orig_shape = bboxes.shape
+            bboxes = bboxes.reshape((-1, 5))
+            w_scale, h_scale, _, _ = results['scale_factor']
+            bboxes[:, 0] *= w_scale
+            bboxes[:, 1] *= h_scale
+            bboxes[:, 2:4] *= np.sqrt(w_scale * h_scale)
+            results[key] = bboxes.reshape(orig_shape)
+
+        headers = results['gt_heads']
+        orig_shape = headers.shape
+        headers = headers.reshape((-1, 2))
+        w_scale, h_scale, _, _ = results['scale_factor']
+        headers[:, 0] = headers[:, 0] * w_scale
+        headers[:, 1] = headers[:, 1] * h_scale
+        results['gt_heads'] = headers.reshape(orig_shape)
+
+
+@ROTATED_PIPELINES.register_module()
+class LoadRHAnnotations(LoadAnnotations):
+
+    def _load_bboxes(self, results):
+        """Private function to load bounding box annotations.
+
+        Args:
+            results (dict): Result dict from :obj:`mmdet.CustomDataset`.
+
+        Returns:
+            dict: The dict contains loaded bounding box annotations.
+        """
+
+        ann_info = results['ann_info']
+        results['gt_bboxes'] = ann_info['bboxes'].copy()
+        results['gt_heads'] = ann_info['headers'].copy()
+
+        if self.denorm_bbox:
+            h, w = results['img_shape'][:2]
+            bbox_num = results['gt_bboxes'].shape[0]
+            if bbox_num != 0:
+                results['gt_bboxes'][:, 0::2] *= w
+                results['gt_bboxes'][:, 1::2] *= h
+            results['gt_bboxes'] = results['gt_bboxes'].astype(np.float32)
+
+        gt_bboxes_ignore = ann_info.get('bboxes_ignore', None)
+        if gt_bboxes_ignore is not None:
+            results['gt_bboxes_ignore'] = gt_bboxes_ignore.copy()
+            results['bbox_fields'].append('gt_bboxes_ignore')
+        results['bbox_fields'].append('gt_bboxes')
+        # results['bbox_fields'].append('gt_heads')
+
+        gt_is_group_ofs = ann_info.get('gt_is_group_ofs', None)
+        if gt_is_group_ofs is not None:
+            results['gt_is_group_ofs'] = gt_is_group_ofs.copy()
+
+        return results
+
+
+@ROTATED_PIPELINES.register_module()
+class HRDefaultFormatBundle(DefaultFormatBundle):
+    """Default formatting bundle.
+
+    It simplifies the pipeline of formatting common fields, including "img",
+    "proposals", "gt_bboxes", "gt_labels", "gt_masks" and "gt_semantic_seg".
+    These fields are formatted as follows.
+
+    - img: (1)transpose, (2)to tensor, (3)to DataContainer (stack=True)
+    - proposals: (1)to tensor, (2)to DataContainer
+    - gt_bboxes: (1)to tensor, (2)to DataContainer
+    - gt_bboxes_ignore: (1)to tensor, (2)to DataContainer
+    - gt_labels: (1)to tensor, (2)to DataContainer
+    - gt_masks: (1)to tensor, (2)to DataContainer (cpu_only=True)
+    - gt_semantic_seg: (1)unsqueeze dim-0 (2)to tensor, \
+                       (3)to DataContainer (stack=True)
+
+    Args:
+        img_to_float (bool): Whether to force the image to be converted to
+            float type. Default: True.
+        pad_val (dict): A dict for padding value in batch collating,
+            the default value is `dict(img=0, masks=0, seg=255)`.
+            Without this argument, the padding value of "gt_semantic_seg"
+            will be set to 0 by default, which should be 255.
+    """
+
+    def __call__(self, results):
+        """Call function to transform and format common fields in results.
+
+        Args:
+            results (dict): Result dict contains the data to convert.
+
+        Returns:
+            dict: The result dict contains the data that is formatted with \
+                default bundle.
+        """
+
+        if 'img' in results:
+            img = results['img']
+            if self.img_to_float is True and img.dtype == np.uint8:
+                # Normally, image is of uint8 type without normalization.
+                # At this time, it needs to be forced to be converted to
+                # flot32, otherwise the model training and inference
+                # will be wrong. Only used for YOLOX currently .
+                img = img.astype(np.float32)
+            # add default meta keys
+            results = self._add_default_meta_keys(results)
+            if len(img.shape) < 3:
+                img = np.expand_dims(img, -1)
+            img = np.ascontiguousarray(img.transpose(2, 0, 1))
+            results['img'] = DC(
+                to_tensor(img), padding_value=self.pad_val['img'], stack=True)
+        for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels', 'gt_heads']:
+            if key not in results:
+                continue
+            results[key] = DC(to_tensor(results[key]))
+        if 'gt_masks' in results:
+            results['gt_masks'] = DC(
+                results['gt_masks'],
+                padding_value=self.pad_val['masks'],
+                cpu_only=True)
+        if 'gt_semantic_seg' in results:
+            results['gt_semantic_seg'] = DC(
+                to_tensor(results['gt_semantic_seg'][None, ...]),
+                padding_value=self.pad_val['seg'],
+                stack=True)
+        return results
+
+@ROTATED_PIPELINES.register_module()
+class Head2Class:
+
+    def __call__(self, results):
+        head = results['gt_heads']
+        bbox = results['gt_bboxes']
+        head_offset = head - bbox[:, 0:2]
+        x_p = head_offset[:, 0] > 0
+        y_p = head_offset[:, 1] > 0
+        head_cls = np.zeros(head.shape[0], dtype=np.int64)
+        head_cls[(~x_p) & (~y_p)] = 0
+        head_cls[x_p & y_p] = 1
+        head_cls[(~x_p) & y_p] = 2
+        head_cls[x_p & (~y_p)] = 3
+        results['gt_heads'] = head_cls
+        return results
