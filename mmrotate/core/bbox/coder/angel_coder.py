@@ -1,36 +1,14 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import math
-from abc import ABCMeta, abstractmethod
 
 import torch
-from mmcv import Registry, build_from_cfg
+from mmdet.core.bbox.coder.base_bbox_coder import BaseBBoxCoder
 
-ANGLE_CODER = Registry('angle_coder')
-
-
-def build_angle_coder(cfg, default_args=None):
-    """Builder for Angle Encoding."""
-    return build_from_cfg(cfg, ANGLE_CODER, default_args)
+from ..builder import ROTATED_BBOX_CODERS
 
 
-class BaseAngleCoder(metaclass=ABCMeta):
-    """Base angle coder."""
-
-    def __init__(self, **kwargs):
-        pass
-
-    @abstractmethod
-    def encode(self, angle_targets):
-        """Encode deltas between bboxes and ground truth boxes."""
-
-    @abstractmethod
-    def decode(self, angle_preds):
-        """Decode the predicted bboxes according to prediction and base
-        boxes."""
-
-
-@ANGLE_CODER.register_module()
-class CSLCoder(BaseAngleCoder):
+@ROTATED_BBOX_CODERS.register_module()
+class CSLCoder(BaseBBoxCoder):
 
     def __init__(self, angle_version, omega=1, window='gaussian', radius=6):
         super().__init__()
@@ -51,7 +29,7 @@ class CSLCoder(BaseAngleCoder):
             1, self.coding_len)
         angle_targets_deg = (angle_targets_deg +
                              self.angle_offset) / self.omega
-        # Float to Int
+        # TODO 要不要四舍五入，这里是直接舍掉，解码再+0.5
         angle_targets_long = angle_targets_deg.long()
 
         if self.window == 'pulse':
@@ -97,29 +75,3 @@ class CSLCoder(BaseAngleCoder):
         angle_pred = ((angle_cls_inds + 0.5) *
                       self.omega) % self.angle_range - self.angle_offset
         return angle_pred * (math.pi / 180)
-
-
-@ANGLE_CODER.register_module()
-class BCLCoder(BaseAngleCoder):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def encode(self, angle_targets):
-        pass
-
-    def decode(self, angle_preds):
-        pass
-
-
-@ANGLE_CODER.register_module()
-class GCLCoder(BaseAngleCoder):
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-
-    def encode(self, angle_targets):
-        pass
-
-    def decode(self, angle_preds):
-        pass

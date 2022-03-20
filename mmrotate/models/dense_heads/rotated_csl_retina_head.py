@@ -5,10 +5,9 @@ import torch.nn as nn
 from mmcv.runner import force_fp32
 from mmdet.core import images_to_levels, multi_apply, unmap
 
-from mmrotate.core import multiclass_nms_rotated
+from mmrotate.core import build_bbox_coder, multiclass_nms_rotated
 from ... import obb2hbb, rotated_anchor_inside_flags
 from ..builder import ROTATED_HEADS, build_loss
-from ..utils import build_angle_coder
 from .rotated_retina_head import RotatedRetinaHead
 
 
@@ -45,7 +44,7 @@ class RotatedCSLRetinaHead(RotatedRetinaHead):
                      ]),
                  **kwargs):
         self.use_encoded_angle = use_encoded_angle
-        self.angle_coder = build_angle_coder(angle_coder)
+        self.angle_coder = build_bbox_coder(angle_coder)
         self.coding_len = self.angle_coder.coding_len
         super(RotatedCSLRetinaHead, self).__init__(**kwargs, init_cfg=init_cfg)
         self.loss_angle = build_loss(loss_angle)
