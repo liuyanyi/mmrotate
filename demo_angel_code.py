@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from mmrotate.core.bbox.coder.angel_coder import build_angle_coder
+from mmrotate.core import build_bbox_coder
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
         window='gaussian',
         radius=6)
 
-    coder = build_angle_coder(cfg)
+    coder = build_bbox_coder(cfg)
 
     angel_target = torch.tensor([[math.pi / 4]])
 
