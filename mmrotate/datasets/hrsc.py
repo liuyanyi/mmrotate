@@ -207,7 +207,7 @@ class HRSCDataset(CustomDataset):
                  metric='mAP',
                  logger=None,
                  proposal_nums=(100, 300, 1000),
-                 iou_thr=0.5,
+                 iou_thr=[0.5, 0.7],
                  scale_ranges=None,
                  use_07_metric=True,
                  nproc=4):
@@ -243,6 +243,8 @@ class HRSCDataset(CustomDataset):
         if metric == 'mAP':
             assert isinstance(iou_thrs, list)
             mean_aps = []
+            if self.with_head:
+                head_accs = []
             for iou_thr in iou_thrs:
                 print_log(f'\n{"-" * 15}iou_thr: {iou_thr}{"-" * 15}')
                 if not self.with_head:
@@ -256,7 +258,7 @@ class HRSCDataset(CustomDataset):
                         logger=logger,
                         nproc=nproc)
                 else:
-                    mean_ap, _ = eval_rbbox_head_map(
+                    mean_ap, head_acc, _ = eval_rbbox_head_map(
                         results,
                         annotations,
                         scale_ranges=scale_ranges,
@@ -265,8 +267,13 @@ class HRSCDataset(CustomDataset):
                         dataset=self.CLASSES,
                         logger=logger,
                         nproc=nproc)
+                    head_accs.append(head_acc)
                 mean_aps.append(mean_ap)
                 eval_results[f'AP{int(iou_thr * 100):02d}'] = round(mean_ap, 3)
+                if self.with_head:
+                    eval_results[f'HA{int(iou_thr * 100):02d}'] = head_acc
+            if self.with_head:
+                eval_results['mHA'] = sum(head_accs) / len(head_accs)
             eval_results['mAP'] = sum(mean_aps) / len(mean_aps)
             eval_results.move_to_end('mAP', last=False)
         elif metric == 'recall':

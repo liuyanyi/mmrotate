@@ -1,12 +1,12 @@
 _base_ = [
-    '../_base_/datasets/hrsc_head.py', '../_base_/schedules/schedule_3x.py',
+    '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_3x.py',
     '../_base_/default_runtime.py'
 ]
-fp16 = dict(loss_scale='dynamic')
-
 angle_version = 'le90'
+
+# model settings
 model = dict(
-    type='RHRetinaNet',
+    type='RotatedFCOS',
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -23,51 +23,35 @@ model = dict(
         in_channels=[256, 512, 1024, 2048],
         out_channels=256,
         start_level=1,
-        add_extra_convs='on_input',
-        num_outs=5),
+        add_extra_convs='on_output',  # use P5
+        num_outs=5,
+        relu_before_extra_convs=True),
     bbox_head=dict(
-        type='RHRetinaHead',
+        type='RotatedFCOSHead',
         num_classes=1,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
-        assign_by_circumhbbox=None,
-        anchor_generator=dict(
-            type='RotatedAnchorGenerator',
-            octave_base_scale=4,
-            scales_per_octave=3,
-            ratios=[1.0, 0.5, 2.0],
-            strides=[8, 16, 32, 64, 128]),
+        strides=[8, 16, 32, 64, 128],
         bbox_coder=dict(
-            type='DeltaXYWHAOBBoxCoder',
-            angle_range=angle_version,
-            norm_factor=None,
-            edge_swap=True,
-            proj_xy=True,
-            target_means=(.0, .0, .0, .0, .0),
-            target_stds=(1.0, 1.0, 1.0, 1.0, 1.0)),
+            type='DistanceAnglePointBBoxCoder', angle_range=angle_version),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='L1Loss', loss_weight=1.0),
-        loss_head=dict(
-            type='FocalLoss',
-            use_sigmoid=True,
-            gamma=2.0,
-            alpha=0.25,
-            loss_weight=1.0),
-    ),
+        loss_bbox=dict(type='PolyIoULoss', loss_weight=1.0),
+        loss_centerness=dict(
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
+    # training and testing settings
     train_cfg=dict(
         assigner=dict(
             type='MaxIoUAssigner',
             pos_iou_thr=0.5,
             neg_iou_thr=0.4,
             min_pos_iou=0,
-            ignore_iof_thr=-1,
-            iou_calculator=dict(type='RBboxOverlaps2D')),
+            ignore_iof_thr=-1),
         allowed_border=-1,
         pos_weight=-1,
         debug=False),
@@ -82,29 +66,36 @@ img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadRHAnnotations', with_bbox=True),
-    dict(type='HRResize', img_scale=(1333, 800)),
+    dict(type='LoadAnnotations', with_bbox=True),
+    dict(type='RResize', img_scale=(1024, 1024)),
     dict(
-        type='RHRandomFlip',
+        type='RRandomFlip',
         flip_ratio=[0.25, 0.25, 0.25],
         direction=['horizontal', 'vertical', 'diagonal'],
         version=angle_version),
     dict(
-        type='RHPolyRandomRotate',
+        type='PolyRandomRotate',
         rotate_ratio=0.5,
         angles_range=180,
         auto_bound=False,
         version=angle_version),
-    dict(type='Head2Class'),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
-    dict(type='HRDefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_heads'])
+    dict(type='DefaultFormatBundle'),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels'])
 ]
 data = dict(
     train=dict(pipeline=train_pipeline, version=angle_version),
     val=dict(version=angle_version),
     test=dict(version=angle_version))
-# optimizer = dict(
-#     _delete_=True, type='AdamW', lr=0.0001 / 4, weight_decay=0.0001)
-evaluation = dict(interval=1, metric='mAP')
+
+# optimizer
+optimizer = dict(
+    _delete_=True,
+    type='AdamW',
+    lr=0.000025,
+    weight_decay=0.0001,
+    paramwise_cfg=dict(norm_decay_mult=0., bypass_duplicate=True))
+
+checkpoint_config = dict(interval=6)
+evaluation = dict(interval=3, metric='mAP')

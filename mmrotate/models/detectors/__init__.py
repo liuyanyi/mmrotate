@@ -13,6 +13,7 @@ from .s2anet import S2ANet
 from .single_stage import RotatedSingleStageDetector
 from .two_stage import RotatedTwoStageDetector
 from .rhretinanet import RHRetinaNet
+from .rh_fcos import RHFCOS
 __all__ = [
     'RotatedRetinaNet', 'RotatedFasterRCNN', 'OrientedRCNN', 'RoITransformer',
     'GlidingVertex', 'ReDet', 'R3Det', 'S2ANet', 'RotatedRepPoints',

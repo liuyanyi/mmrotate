@@ -149,7 +149,6 @@ class RHRandomFlip(RRandomFlip):
 
         return results
 
-
     def head_flip(self, heads, img_shape, direction):
         assert heads.shape[-1] % 2 == 0
         flipped = heads.copy()
@@ -167,7 +166,6 @@ class RHRandomFlip(RRandomFlip):
         else:
             raise ValueError(f"Invalid flipping direction '{direction}'")
         return flipped
-
 
 
 @ROTATED_PIPELINES.register_module()
@@ -299,7 +297,7 @@ class PolyRandomRotate(object):
         for pt in polys:
             pt = np.array(pt, dtype=np.float32)
             obb = poly2obb_np(pt, self.version) \
-                if poly2obb_np(pt, self.version) is not None\
+                if poly2obb_np(pt, self.version) is not None \
                 else [0, 0, 0, 0, 0]
             gt_bboxes.append(obb)
         gt_bboxes = np.array(gt_bboxes, dtype=np.float32)
@@ -343,6 +341,94 @@ class HRResize(RResize):
         headers[:, 0] = headers[:, 0] * w_scale
         headers[:, 1] = headers[:, 1] * h_scale
         results['gt_heads'] = headers.reshape(orig_shape)
+
+
+@ROTATED_PIPELINES.register_module()
+class RHPolyRandomRotate(PolyRandomRotate):
+
+    def apply_coords(self, coords):
+        """
+        coords should be a N * 2 array-like, containing N couples of (x, y)
+        points
+        """
+        if len(coords) == 0:
+            return coords
+        coords = np.asarray(coords, dtype=float)
+        return cv2.transform(coords[:, np.newaxis, :], self.rm_coords)[:, 0, :]
+
+    def __call__(self, results):
+        """Call function of PolyRandomRotate."""
+        if not self.is_rotate:
+            results['rotate'] = False
+            angle = 0
+        else:
+            angle = 2 * self.angles_range * np.random.rand() - \
+                    self.angles_range
+            results['rotate'] = True
+
+            class_labels = results['gt_labels']
+            for classid in class_labels:
+                if self.rect_classes:
+                    if classid in self.rect_classes:
+                        np.random.shuffle(self.discrete_range)
+                        angle = self.discrete_range[0]
+                        break
+
+        h, w, c = results['img_shape']
+        img = results['img']
+        results['rotate_angle'] = angle
+
+        image_center = np.array((w / 2, h / 2))
+        abs_cos, abs_sin = abs(np.cos(angle)), abs(np.sin(angle))
+        if self.auto_bound:
+            bound_w, bound_h = np.rint(
+                [h * abs_sin + w * abs_cos,
+                 h * abs_cos + w * abs_sin]).astype(int)
+        else:
+            bound_w, bound_h = w, h
+
+        self.rm_coords = self.create_rotation_matrix(image_center, angle,
+                                                     bound_h, bound_w)
+        self.rm_image = self.create_rotation_matrix(
+            image_center, angle, bound_h, bound_w, offset=-0.5)
+
+        img = self.apply_image(img, bound_h, bound_w)
+        results['img'] = img
+        results['img_shape'] = (bound_h, bound_w, c)
+        gt_bboxes = results.get('gt_bboxes', [])
+        gt_heads = results.get('gt_heads', [])
+        labels = results.get('gt_labels', [])
+        gt_bboxes = np.concatenate(
+            [gt_bboxes, np.zeros((gt_bboxes.shape[0], 1))], axis=-1)
+        polys = obb2poly_np(gt_bboxes, self.version)[:, :-1].reshape(-1, 2)
+        polys = self.apply_coords(polys).reshape(-1, 8)
+        gt_bboxes = []
+        for pt in polys:
+            pt = np.array(pt, dtype=np.float32)
+            obb = poly2obb_np(pt, self.version) \
+                if poly2obb_np(pt, self.version) is not None \
+                else [0, 0, 0, 0, 0]
+            gt_bboxes.append(obb)
+        gt_bboxes = np.array(gt_bboxes, dtype=np.float32)
+        keep_inds = self.filter_border(gt_bboxes, bound_h, bound_w)
+        gt_bboxes = gt_bboxes[keep_inds, :]
+        gt_heads = gt_heads[keep_inds, :]
+        gt_heads = self.apply_coords(gt_heads)
+        labels = labels[keep_inds]
+        if len(gt_bboxes) == 0:
+            return None
+        results['gt_bboxes'] = gt_bboxes
+        results['gt_labels'] = labels
+        results['gt_heads'] = gt_heads
+
+        return results
+
+    def __repr__(self):
+        repr_str = self.__class__.__name__
+        repr_str += f'(rotate_ratio={self.rotate_ratio}, ' \
+                    f'angles_range={self.angles_range}, ' \
+                    f'auto_bound={self.auto_bound})'
+        return repr_str
 
 
 @ROTATED_PIPELINES.register_module()
@@ -452,19 +538,50 @@ class HRDefaultFormatBundle(DefaultFormatBundle):
                 stack=True)
         return results
 
+
 @ROTATED_PIPELINES.register_module()
 class Head2Class:
 
     def __call__(self, results):
         head = results['gt_heads']
         bbox = results['gt_bboxes']
-        head_offset = head - bbox[:, 0:2]
-        x_p = head_offset[:, 0] > 0
-        y_p = head_offset[:, 1] > 0
-        head_cls = np.zeros(head.shape[0], dtype=np.int64)
-        head_cls[(~x_p) & (~y_p)] = 0
-        head_cls[x_p & y_p] = 1
-        head_cls[(~x_p) & y_p] = 2
-        head_cls[x_p & (~y_p)] = 3
+        bbox_ctr = bbox[:, 0:2]
+        # bbox_ctr = np.tile(bbox_ctr, 4)
+        w = bbox[:, 2:3]
+        h = bbox[:, 3:4]
+        a = bbox[:, 4:5]
+        # zeros = np.zeros_like(w)
+        # poly = obb2poly_np(np.concatenate([bbox, np.expand_dims(zeros, 0)], axis=1), 'le90')
+
+        # tblr = np.concatenate([zeros, -h, zeros, h, -w, zeros, zeros, w], axis=np.newaxis)
+        # # tblr = np.array([0, -h, 0, h, -w, 0, 0, w])
+        # midpoints = bbox_ctr + tblr
+        # midpoints = midpoints.reshape((-1, 4, 2))
+        Cos, Sin = np.cos(a), np.sin(a)
+        vector1 = np.concatenate([w / 2 * Cos, w / 2 * Sin], axis=-1)
+        vector2 = np.concatenate([-h / 2 * Sin, h / 2 * Cos], axis=-1)
+        point_t = bbox_ctr - vector2
+        point_b = bbox_ctr + vector2
+        point_l = bbox_ctr - vector1
+        point_r = bbox_ctr + vector1
+
+        offset_t = np.sum(np.abs(head - point_t), axis=1)
+        offset_b = np.sum(np.abs(head - point_b), axis=1)
+        offset_l = np.sum(np.abs(head - point_l), axis=1)
+        offset_r = np.sum(np.abs(head - point_r), axis=1)
+
+        offsets = np.stack([offset_t, offset_b, offset_l, offset_r], axis=1)
+        # offsets = np.stack([offset_l, offset_r], axis=1)
+        head_cls = offsets.argmin(axis=1)
+        #
+        # head_offset = head - bbox[:, 0:2]
+        # x_p = head_offset[:, 0] > 0
+        # y_p = head_offset[:, 1] > 0
+        # head_cls = np.zeros(head.shape[0], dtype=np.int64)
+        # head_cls[(~x_p) & (~y_p)] = 2
+        # head_cls[x_p & y_p] = 0
+        # head_cls[(~x_p) & y_p] = 3
+        # head_cls[x_p & (~y_p)] = 1
         results['gt_heads'] = head_cls
+        results['gt_heads_ori'] = head
         return results

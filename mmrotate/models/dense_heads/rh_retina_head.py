@@ -48,20 +48,21 @@ class RHRetinaHead(RotatedAnchorHead):
                      ratios=[0.5, 1.0, 2.0],
                      strides=[8, 16, 32, 64, 128]),
                  loss_head=dict(
-                     type='FocalLoss',
-                     use_sigmoid=True,
-                     gamma=2.0,
-                     alpha=0.25,
-                     loss_weight=1.0),
+                     type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
                  init_cfg=dict(
                      type='Normal',
                      layer='Conv2d',
                      std=0.01,
-                     override=dict(
-                         type='Normal',
-                         name='retina_cls',
-                         std=0.01,
-                         bias_prob=0.01)),
+                     override=[
+                         dict(type='Normal',
+                              name='retina_cls',
+                              std=0.01,
+                              bias_prob=0.01),
+                         dict(type='Normal',
+                              name='retina_head',
+                              std=0.01,
+                              bias_prob=0.01),
+                     ]),
                  **kwargs):
         self.stacked_convs = stacked_convs
         self.conv_cfg = conv_cfg

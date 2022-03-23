@@ -3,7 +3,6 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 angle_version = 'le90'
-fp16 = dict(loss_scale=dict(init_scale=512))
 
 # model settings
 model = dict(
@@ -42,7 +41,7 @@ model = dict(
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='PolyGIoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='PolyIoULoss', loss_weight=1.0),
         loss_centerness=dict(
             type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
     # training and testing settings
@@ -68,7 +67,7 @@ img_norm_cfg = dict(
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='RResize', img_scale=(1024, 1024)),
+    dict(type='RResize', img_scale=(1333, 1333)),
     dict(
         type='RRandomFlip',
         flip_ratio=[0.25, 0.25, 0.25],
@@ -79,7 +78,6 @@ train_pipeline = [
         rotate_ratio=0.5,
         angles_range=180,
         auto_bound=False,
-        rect_classes=[9, 11],
         version=angle_version),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),

@@ -1,12 +1,12 @@
 # dataset settings
 dataset_type = 'HRSCDataset'
-data_root = '/datasets/hrsc/'
+data_root = '/root/autodl-tmp/dataset/hrsc/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True),
-    dict(type='HRResize', img_scale=(800, 800)),
+    dict(type='HRResize', img_scale=(1024, 1024)),
     dict(type='RRandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
@@ -17,7 +17,7 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(
         type='MultiScaleFlipAug',
-        img_scale=(800, 800),
+        img_scale=(1024, 1024),
         flip=False,
         transforms=[
             dict(type='RResize'),

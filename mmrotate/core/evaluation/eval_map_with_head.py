@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import math
 from multiprocessing import get_context
 
 import numpy as np
@@ -85,9 +86,9 @@ def tpfp_default(det_bboxes,
                         tp[k, i] = 1
                         if det_head_cls[i] == gt_heads[matched_gt]:
                             tp_head += 1
+                        head_cnt += 1
                     else:
                         fp[k, i] = 1
-                    head_cnt += 1
                 # otherwise ignore this detected bbox, tp = 0, fp = 0
             elif min_area is None:
                 fp[k, i] = 1
@@ -130,16 +131,28 @@ def get_cls_results(det_results, annotations, class_id):
 
 
 def head2class(head, bbox):
-    head_offset = head - bbox[:, 0:2]
-    x_p = head_offset[:, 0] > 0
-    y_p = head_offset[:, 1] > 0
-    head_cls = np.zeros(head.shape[0], dtype=np.int64)
-    head_cls[(~x_p) & (~y_p)] = 0
-    head_cls[x_p & y_p] = 1
-    head_cls[(~x_p) & y_p] = 2
-    head_cls[x_p & (~y_p)] = 3
-    return head_cls
+    bbox_ctr = bbox[:, 0:2]
+    # bbox_ctr = np.tile(bbox_ctr, 4)
+    w = bbox[:, 2:3]
+    h = bbox[:, 3:4]
+    a = bbox[:, 4:5]
 
+    Cos, Sin = np.cos(a), np.sin(a)
+    vector1 = np.concatenate([w / 2 * Cos, w / 2 * Sin], axis=-1)
+    vector2 = np.concatenate([-h / 2 * Sin, h / 2 * Cos], axis=-1)
+    point_t = bbox_ctr - vector2
+    point_b = bbox_ctr + vector2
+    point_l = bbox_ctr - vector1
+    point_r = bbox_ctr + vector1
+
+    offset_t = np.sum(np.abs(head - point_t), axis=1)
+    offset_b = np.sum(np.abs(head - point_b), axis=1)
+    offset_l = np.sum(np.abs(head - point_l), axis=1)
+    offset_r = np.sum(np.abs(head - point_r), axis=1)
+
+    offsets = np.stack([offset_t, offset_b, offset_l, offset_r], axis=1)
+    # offsets = np.stack([offset_l, offset_r], axis=1)
+    return offsets.argmin(axis=1)
 
 def eval_rbbox_head_map(det_results,
                         annotations,
@@ -190,6 +203,8 @@ def eval_rbbox_head_map(det_results,
 
     pool = get_context('spawn').Pool(nproc)
     eval_results = []
+    tp_head_sums = 0.
+    head_cnt_sums = 0.
     for i in range(num_classes):
         # get gt and det bboxes of this class
         cls_dets, cls_gts, cls_gts_ignore = get_cls_results(
@@ -204,6 +219,8 @@ def eval_rbbox_head_map(det_results,
         tp, fp, tp_head, head_cnt = tuple(zip(*tpfp))
         tp_head_sum = np.array(tp_head).sum()
         head_cnt_sum = np.array(head_cnt).sum()
+        tp_head_sums += tp_head_sum
+        head_cnt_sums += head_cnt_sum
         head_acc = tp_head_sum / (head_cnt_sum + 1e-5)
         # calculate gt number of each scale
         # ignored gts or gts beyond the specific scale are not counted
@@ -266,7 +283,7 @@ def eval_rbbox_head_map(det_results,
     print_map_summary(
         mean_ap, eval_results, dataset, area_ranges, logger=logger)
 
-    return mean_ap, eval_results
+    return mean_ap, tp_head_sums / (head_cnt_sums + 1e-5), eval_results
 
 
 def print_map_summary(mean_ap,
@@ -325,7 +342,7 @@ def print_map_summary(mean_ap,
         for j in range(num_classes):
             row_data = [
                 label_names[j], num_gts[i, j], results[j]['num_dets'],
-                f'{recalls[i, j]:.3f}', f'{aps[i, j]:.3f}', results[j]['head_acc']
+                f'{recalls[i, j]:.3f}', f'{aps[i, j]:.3f}', f"{results[j]['head_acc']:.3f}"
             ]
             table_data.append(row_data)
         table_data.append(['mAP', '', '', '', f'{mean_ap[i]:.3f}'])
