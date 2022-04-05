@@ -2,12 +2,12 @@
   "nproc": 10,
   "load_type": "dota",
   "img_dirs": [
-    "/cluster/home/it_stu198/main/datasets/DOTA/train/images/",
-    "/cluster/home/it_stu198/main/datasets/DOTA/val/images/"
+    "/media/wangchen/My Passport/datasets/Dota/dota/train/images/",
+    "/media/wangchen/My Passport/datasets/Dota/dota/val/images/"
   ],
   "ann_dirs": [
-    "/cluster/home/it_stu198/main/datasets/DOTA/train/labelTxt/",
-    "/cluster/home/it_stu198/main/datasets/DOTA/val/labelTxt/"
+    "/media/wangchen/My Passport/datasets/Dota/dota/train/labelTxt/",
+    "/media/wangchen/My Passport/datasets/Dota/dota/val/labelTxt/"
   ],
   "classes": null,
   "prior_annfile": null,
@@ -29,6 +29,6 @@
     116,
     124
   ],
-  "save_dir": "/cluster/home/it_stu198/main/datasets/split_1024_dota1_0/trainval/",
+  "save_dir": "/home/wangchen/liuyanyi/datasets/dota/trainval/",
   "save_ext": ".png"
 }

@@ -7,7 +7,7 @@ from mmcv.cnn import Scale
 from mmcv.runner import force_fp32
 from mmdet.core import multi_apply, reduce_mean
 
-from mmrotate.models.utils.angel_coder import build_angle_coder
+from mmrotate.core import build_bbox_coder
 from ... import multiclass_nms_rotated, rbbox_overlaps
 from ..builder import ROTATED_HEADS, build_loss
 from .rotated_anchor_free_head import RotatedAnchorFreeHead
@@ -103,7 +103,7 @@ class RotatedFCOSGFLCSLHead(RotatedAnchorFreeHead):
         self.center_sampling = center_sampling
         self.center_sample_radius = center_sample_radius
         self.norm_on_bbox = norm_on_bbox
-        self.angle_coder = build_angle_coder(angel_coder)
+        self.angle_coder = build_bbox_coder(angel_coder)
         self.coding_len = self.angle_coder.coding_len
 
         super().__init__(

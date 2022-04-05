@@ -2,10 +2,10 @@
   "nproc": 10,
   "load_type": "dota",
   "img_dirs": [
-    "data/DOTA1_0/train/images/"
+    "/media/wangchen/My Passport/datasets/Dota/dota/train/images/"
   ],
   "ann_dirs": [
-    "data/DOTA1_0/train/labelTxt/"
+    "/media/wangchen/My Passport/datasets/Dota/dota/train/labelTxt/"
   ],
   "classes": null,
   "prior_annfile": null,
@@ -27,6 +27,6 @@
     116,
     124
   ],
-  "save_dir": "data/split_ss_dota1_0/train/",
+  "save_dir": "/home/wangchen/liuyanyi/datasets/dota/train/",
   "save_ext": ".png"
 }

@@ -10,8 +10,8 @@ from mmdet.datasets import CustomDataset
 from PIL import Image
 
 from mmrotate.core import eval_rbbox_map, obb2poly_np, poly2obb_np
-from .builder import ROTATED_DATASETS
 from ..core.evaluation.eval_map_with_head import eval_rbbox_head_map
+from .builder import ROTATED_DATASETS
 
 
 @ROTATED_DATASETS.register_module()
@@ -28,7 +28,7 @@ class HRSCDataset(CustomDataset):
     """
 
     CLASSES = None
-    HRSC_CLASS = ('ship',)
+    HRSC_CLASS = ('ship', )
     HRSC_CLASSES = ('ship', 'aircraft carrier', 'warcraft', 'merchant ship',
                     'Nimitz', 'Enterprise', 'Arleigh Burke', 'WhidbeyIsland',
                     'Perry', 'Sanantonio', 'Ticonderoga', 'Kitty Hawk',
@@ -111,9 +111,9 @@ class HRSCDataset(CustomDataset):
             for obj in root.findall('HRSC_Objects/HRSC_Object'):
                 if self.classwise:
                     class_id = obj.find('Class_ID').text
-                    if class_id not in self.CLASSES_ID:
+                    label = self.catid2label.get(class_id)
+                    if label is None:
                         continue
-                    label = self.catid2label[class_id]
                 else:
                     label = 0
 
@@ -125,7 +125,7 @@ class HRSCDataset(CustomDataset):
                     float(obj.find('mbox_h').text),
                     float(obj.find('mbox_ang').text), 0
                 ]],
-                    dtype=np.float32)
+                                dtype=np.float32)
 
                 polygon = obb2poly_np(bbox, 'le90')[0, :-1].astype(np.float32)
                 if self.version != 'le90':
@@ -137,7 +137,7 @@ class HRSCDataset(CustomDataset):
                     int(obj.find('header_x').text),
                     int(obj.find('header_y').text)
                 ],
-                    dtype=np.int64)
+                                dtype=np.int64)
                 # head_offset = head - bbox[0:2]
                 # head_p = head_offset > 0
                 # x_p, y_p = head_p[0], head_p[1]

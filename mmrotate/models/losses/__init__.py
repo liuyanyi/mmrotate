@@ -4,11 +4,10 @@ from .gaussian_dist_loss import GDLoss
 from .gaussian_dist_loss_v1 import GDLoss_v1
 from .kf_iou_loss import KFLoss
 from .kld_reppoints_loss import KLDRepPointsLoss
-from .poly_iou_loss import PolyDIoULoss, PolyGIoULoss, PolyIoULoss
+# from .poly_iou_loss import PolyDIoULoss, PolyGIoULoss, PolyIoULoss
 from .smooth_focal_loss import SmoothFocalLoss
 
 __all__ = [
     'GDLoss', 'GDLoss_v1', 'KFLoss', 'ConvexGIoULoss', 'BCConvexGIoULoss',
-    'KLDRepPointsLoss', 'PolyIoULoss', 'PolyGIoULoss', 'PolyDIoULoss',
-    'SmoothFocalLoss'
+    'KLDRepPointsLoss', 'SmoothFocalLoss'
 ]

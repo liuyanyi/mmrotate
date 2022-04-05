@@ -17,10 +17,10 @@ def main():
     #                             angle_version='le90')
     cfg = dict(
         type='CSLCoder',
-        angle_version='le135',
+        angle_version='le90',
         omega=1,
         window='gaussian',
-        radius=6)
+        radius=1)
 
     coder = build_bbox_coder(cfg)
 
