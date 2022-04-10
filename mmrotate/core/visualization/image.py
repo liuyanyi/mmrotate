@@ -37,13 +37,13 @@ def _get_adaptive_scales(areas, min_area=800, max_area=30000):
     return scales
 
 
-def draw_bboxes(ax, bboxes, color='g', alpha=0.8, thickness=2):
-    """Draw bounding boxes on the axes.
+def draw_rbboxes(ax, bboxes, color='g', alpha=0.8, thickness=2):
+    """Draw oriented bounding boxes on the axes.
 
     Args:
         ax (matplotlib.Axes): The input axes.
         bboxes (ndarray): The input bounding boxes with the shape
-            of (n, 4).
+            of (n, 5).
         color (list[tuple] | matplotlib.color): the colors for each
             bounding boxes.
         alpha (float): Transparency of bounding boxes. Default: 0.8.
@@ -54,7 +54,6 @@ def draw_bboxes(ax, bboxes, color='g', alpha=0.8, thickness=2):
     """
     polygons = []
     for i, bbox in enumerate(bboxes):
-        # bbox_int = bbox.astype(np.int32)
         xc, yc, w, h, ag = bbox[:5]
         wx, wy = w / 2 * np.cos(ag), w / 2 * np.sin(ag)
         hx, hy = -h / 2 * np.sin(ag), h / 2 * np.cos(ag)
@@ -85,7 +84,7 @@ def imshow_det_rbboxes(img,
                        text_color='green',
                        mask_color=None,
                        thickness=2,
-                       font_size=8,
+                       font_size=13,
                        win_name='',
                        show=True,
                        wait_time=0,
@@ -94,8 +93,8 @@ def imshow_det_rbboxes(img,
 
     Args:
         img (str | ndarray): The image to be displayed.
-        bboxes (ndarray): Bounding boxes (with scores), shaped (n, 4) or
-            (n, 5).
+        bboxes (ndarray): Bounding boxes (with scores), shaped (n, 5) or
+            (n, 6).
         labels (ndarray): Labels of bboxes.
         segms (ndarray | None): Masks, shaped (n,h,w) or None.
         class_names (list[str]): Names of each classes.
@@ -126,7 +125,7 @@ def imshow_det_rbboxes(img,
     assert labels.ndim == 1, \
         f' labels ndim should be 1, but its ndim is {labels.ndim}.'
     assert bboxes is None or bboxes.shape[1] == 5 or bboxes.shape[1] == 6, \
-        f' bboxes.shape[1] should be 4 or 5, but its {bboxes.shape[1]}.'
+        f' bboxes.shape[1] should be 5 or 6, but its {bboxes.shape[1]}.'
     assert bboxes is None or bboxes.shape[0] <= labels.shape[0], \
         'labels.shape[0] should not be less than bboxes.shape[0].'
     assert segms is None or segms.shape[0] == labels.shape[0], \
@@ -171,7 +170,7 @@ def imshow_det_rbboxes(img,
         num_bboxes = bboxes.shape[0]
         bbox_palette = palette_val(get_palette(bbox_color, max_label + 1))
         colors = [bbox_palette[label] for label in labels[:num_bboxes]]
-        draw_bboxes(ax, bboxes, colors, alpha=0.8, thickness=thickness)
+        draw_rbboxes(ax, bboxes, colors, alpha=0.8, thickness=thickness)
 
         horizontal_alignment = 'left'
         positions = bboxes[:, :2].astype(np.int32) + thickness
