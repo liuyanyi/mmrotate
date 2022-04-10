@@ -1,13 +1,9 @@
 {
   "nproc": 10,
-  "load_type": "dota",
   "img_dirs": [
-    "/media/neu/My Passport/datasets/Dota/dota/test/images/"
+    "data/DOTA/test/images/"
   ],
   "ann_dirs": null,
-  "classes": null,
-  "prior_annfile": null,
-  "merge_type": "addition",
   "sizes": [
     1024
   ],
@@ -27,6 +23,6 @@
     116,
     124
   ],
-  "save_dir": "/home/neu/datasets/Dota_mmrotate/dota_ms/test/",
+  "save_dir": "data/split_ms_dota/test/",
   "save_ext": ".png"
 }

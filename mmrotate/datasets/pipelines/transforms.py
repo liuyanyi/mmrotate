@@ -3,7 +3,8 @@ import cv2
 import mmcv
 import numpy as np
 from mmcv.parallel import DataContainer as DC
-from mmdet.datasets.pipelines import LoadAnnotations, to_tensor, DefaultFormatBundle
+from mmdet.datasets.pipelines import (DefaultFormatBundle, LoadAnnotations,
+                                      to_tensor)
 from mmdet.datasets.pipelines.transforms import RandomFlip, Resize
 
 from mmrotate.core import norm_angle, obb2poly_np, poly2obb_np
@@ -87,7 +88,7 @@ class RRandomFlip(RandomFlip):
         if self.version == 'oc':
             rotated_flag = (bboxes[:, 4] != np.pi / 2)
             flipped[rotated_flag, 4] = np.pi / 2 - bboxes[rotated_flag, 4]
-            flipped[rotated_flag, 2] = bboxes[rotated_flag, 3],
+            flipped[rotated_flag, 2] = bboxes[rotated_flag, 3]
             flipped[rotated_flag, 3] = bboxes[rotated_flag, 2]
         else:
             flipped[:, 4] = norm_angle(np.pi - bboxes[:, 4], self.version)
@@ -522,7 +523,10 @@ class HRDefaultFormatBundle(DefaultFormatBundle):
             img = np.ascontiguousarray(img.transpose(2, 0, 1))
             results['img'] = DC(
                 to_tensor(img), padding_value=self.pad_val['img'], stack=True)
-        for key in ['proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels', 'gt_heads']:
+        for key in [
+                'proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels',
+                'gt_heads'
+        ]:
             if key not in results:
                 continue
             results[key] = DC(to_tensor(results[key]))

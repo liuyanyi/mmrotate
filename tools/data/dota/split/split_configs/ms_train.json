@@ -1,13 +1,11 @@
 {
   "nproc": 10,
-  "load_type": "dota1.5",
   "img_dirs": [
-    "data/DOTA1_5/test/images/"
+    "data/DOTA/train/images/"
   ],
-  "ann_dirs": null,
-  "classes": null,
-  "prior_annfile": null,
-  "merge_type": "addition",
+  "ann_dirs": [
+    "data/DOTA/train/labelTxt/"
+  ],
   "sizes": [
     1024
   ],
@@ -27,6 +25,6 @@
     116,
     124
   ],
-  "save_dir": "data/split_ms_dota1_5/test/",
+  "save_dir": "data/split_ms_dota/train/",
   "save_ext": ".png"
 }
