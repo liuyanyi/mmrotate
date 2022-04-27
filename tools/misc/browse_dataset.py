@@ -6,6 +6,8 @@ from pathlib import Path
 
 import mmcv
 from mmcv import Config, DictAction
+from mmdet.core import mask2ndarray
+from mmdet.core.visualization import imshow_det_bboxes
 from mmdet.datasets.builder import build_dataset
 
 from mmrotate.core.visualization import imshow_det_rbboxes
@@ -18,7 +20,11 @@ def parse_args():
         '--skip-type',
         type=str,
         nargs='+',
-        default=['DefaultFormatBundle', 'Normalize', 'Collect'],
+        default=[
+            'DefaultFormatBundle', 'Resize', 'RResize', 'Normalize', 'Collect',
+            'PolyRandomRotate', 'RRandomFlip', 'RandomFlip',
+            'PhotoMetricDistortion'
+        ],
         help='skip some useless pipeline')
     parser.add_argument(
         '--output-dir',
@@ -84,24 +90,33 @@ def main():
     progress_bar = mmcv.ProgressBar(len(dataset))
 
     for item in dataset:
+        # print(item)
         filename = os.path.join(args.output_dir,
                                 Path(item['filename']).name
                                 ) if args.output_dir is not None else None
+        # filename = os.path.join(args.output_dir,
+        #                         Path(item['img_metas'].filename).name
+        #                         ) if args.output_dir is not None else None
 
         gt_bboxes = item['gt_bboxes']
         gt_labels = item['gt_labels']
+        gt_masks = item.get('gt_masks', None)
+        if gt_masks is not None:
+            gt_masks = mask2ndarray(gt_masks)
 
         imshow_det_rbboxes(
             item['img'],
             gt_bboxes,
             gt_labels,
+            gt_masks,
             class_names=dataset.CLASSES,
             score_thr=0,
             show=not args.not_show,
             wait_time=args.show_interval,
             out_file=filename,
-            bbox_color=dataset.PALETTE,
-            text_color=(200, 200, 200))
+            bbox_color='hrsc',
+            mask_color='hrsc',
+            text_color='hrsc')
 
         progress_bar.update()
 

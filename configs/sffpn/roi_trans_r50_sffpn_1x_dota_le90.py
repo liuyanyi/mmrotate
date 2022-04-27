@@ -2,24 +2,33 @@ _base_ = [
     '../_base_/datasets/dotav1.py', '../_base_/schedules/schedule_1x.py',
     '../_base_/default_runtime.py'
 ]
-# fp16 = dict(loss_scale=dict(init_scale=512))
 
 angle_version = 'le90'
 model = dict(
-    type='ReDet',
+    type='RoITransformer',
     backbone=dict(
-        type='ReResNet',
+        type='ResNet',
         depth=50,
         num_stages=4,
         out_indices=(0, 1, 2, 3),
         frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
         style='pytorch',
-        pretrained='checkpoint/re_resnet50_c8_batch256-25b16846.pth'),
-    neck=dict(
-        type='ReFPN',
-        in_channels=[256, 512, 1024, 2048],
-        out_channels=256,
-        num_outs=5),
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
+    neck=[
+        dict(
+            type='FPN',
+            in_channels=[256, 512, 1024, 2048],
+            out_channels=256,
+            num_outs=5),
+        dict(
+            type='ScaleFusion',
+            in_channels=256,
+            out_channels=256,
+            num_blocks=1,
+            name='HFAB')
+    ],
     rpn_head=dict(
         type='RotatedRPNHead',
         in_channels=256,
@@ -52,10 +61,9 @@ model = dict(
             dict(
                 type='RotatedSingleRoIExtractor',
                 roi_layer=dict(
-                    type='RiRoIAlignRotated',
+                    type='RoIAlignRotated',
                     out_size=7,
-                    num_samples=2,
-                    num_orientations=8,
+                    sample_num=2,
                     clockwise=True),
                 out_channels=256,
                 featmap_strides=[4, 8, 16, 32]),
@@ -102,6 +110,7 @@ model = dict(
                     loss_weight=1.0),
                 loss_bbox=dict(type='SmoothL1Loss', beta=1.0, loss_weight=1.0))
         ]),
+    # model training and testing settings
     train_cfg=dict(
         rpn=dict(
             assigner=dict(
@@ -171,7 +180,7 @@ model = dict(
             nms_pre=2000,
             min_bbox_size=0,
             score_thr=0.05,
-            nms=dict(iou_thr=0.1),
+            nms=dict(type=angle_version, iou_thr=0.1),
             max_per_img=2000)))
 
 img_norm_cfg = dict(
@@ -195,4 +204,5 @@ data = dict(
     val=dict(version=angle_version),
     test=dict(version=angle_version))
 
-optimizer = dict(lr=0.0025)
+optimizer = dict(lr=0.005)
+work_dir = './work_dirs/sff_exp/dota/roi_trans'

@@ -249,7 +249,6 @@ class RotatedRepPointsHead(BaseDenseHead):
         Args:
             featmap_sizes (list[tuple]): Multi-level feature map sizes.
             img_metas (list[dict]): Image meta info.
-
         Returns:
             tuple: points of each image, valid flags of each image
         """
@@ -378,7 +377,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                     unmap_outputs=True):
         """Compute corresponding GT box and classification targets for
         proposals.
-
         Args:
             proposals_list (list[list]): Multi level points/bboxes of each
                 image.
@@ -394,10 +392,8 @@ class RotatedRepPointsHead(BaseDenseHead):
             label_channels (int): Channel of label.
             unmap_outputs (bool): Whether to map outputs back to the original
                 set of anchors.
-
         Returns:
             tuple (list[Tensor]):
-
                 - labels_list (list[Tensor]): Labels of each level.
                 - label_weights_list (list[Tensor]): Label weights of each \
                     level.
@@ -429,7 +425,7 @@ class RotatedRepPointsHead(BaseDenseHead):
             gt_bboxes_ignore_list = [None for _ in range(num_imgs)]
         if gt_labels_list is None:
             gt_labels_list = [None for _ in range(num_imgs)]
-        all_overlaps_rotate_list = [None] * 4
+        all_overlaps_rotate_list = [None] * len(proposals_list)
         (all_labels, all_label_weights, all_bbox_gt, all_proposals,
          all_proposal_weights, pos_inds_list, neg_inds_list,
          sampling_result) = multi_apply(
@@ -471,7 +467,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                         unmap_outputs=True):
         """Compute corresponding GT box and classification targets for
         proposals.
-
         Args:
             proposals_list (list[list]): Multi level points/bboxes of each
                 image.
@@ -487,7 +482,6 @@ class RotatedRepPointsHead(BaseDenseHead):
             label_channels (int): Channel of label.
             unmap_outputs (bool): Whether to map outputs back to the original
                 set of anchors.
-
         Returns:
             tuple:
                 - all_labels (list[Tensor]): Labels of each level.
@@ -518,7 +512,7 @@ class RotatedRepPointsHead(BaseDenseHead):
             gt_bboxes_ignore_list = [None for _ in range(num_imgs)]
         if gt_labels_list is None:
             gt_labels_list = [None for _ in range(num_imgs)]
-        all_overlaps_rotate_list = [None] * 4
+        all_overlaps_rotate_list = [None] * len(proposals_list)
         (all_labels, all_label_weights, all_bbox_gt, all_proposals,
          all_proposal_weights, pos_inds_list, neg_inds_list,
          sampling_result) = multi_apply(
@@ -818,7 +812,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                 (num_anchors, 4).
             pos_inds (Tensor): Index of all positive samples got from
                 first assign process.
-
         Returns:
             Tensor: Losses of all positive samples in single image.
         """
@@ -856,7 +849,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                  num_proposals_each_level=None,
                  num_level=None):
         """CFA reassign process.
-
         Args:
             pos_losses (Tensor): Losses of all positive samples in
                 single image.
@@ -875,10 +867,8 @@ class RotatedRepPointsHead(BaseDenseHead):
             num_proposals_each_level (list, optional): Number of proposals
                 of each level.
             num_level (int, optional): Number of level.
-
         Returns:
             tuple: Usually returns a tuple containing learning targets.
-
                 - label (Tensor): classification target of each anchor after \
                   paa assign, with shape (num_anchors,)
                 - label_weight (Tensor): Classification loss weight of each \
@@ -1016,7 +1006,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                    with_nms=True,
                    **kwargs):
         """Transform network outputs of a batch into bbox results.
-
         Args:
             cls_scores (list[Tensor]): Classification scores for all
                 scale levels, each is a 4D-tensor, has shape
@@ -1034,7 +1023,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                 Default False.
             with_nms (bool): If True, do nms before return boxes.
                 Default True.
-
         Returns:
             list[list[Tensor, Tensor]]: Each item in result_list is 2-tuple.
                 The first item is an (n, 6) tensor, where the first 4 columns
@@ -1103,7 +1091,6 @@ class RotatedRepPointsHead(BaseDenseHead):
                 mlvl_scores, else return mlvl_bboxes, mlvl_scores and
                 mlvl_score_factor. Usually with_nms is False is used for aug
                 test. If with_nms is True, then return the following format
-
                 - det_bboxes (Tensor): Predicted bboxes with shape \
                     [num_bboxes, 5], where the first 4 columns are bounding \
                     box positions (cx, cy, w, h, a) and the 5-th \
