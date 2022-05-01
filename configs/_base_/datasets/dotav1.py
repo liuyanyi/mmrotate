@@ -44,4 +44,6 @@ data = dict(
         type=dataset_type,
         ann_file=data_root + 'test/images/',
         img_prefix=data_root + 'test/images/',
-        pipeline=test_pipeline))
+        pipeline=test_pipeline),
+    test_dataloader=dict(samples_per_gpu=4, workers_per_gpu=4),
+)
