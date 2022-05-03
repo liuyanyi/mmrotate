@@ -85,6 +85,7 @@ There are also tutorials:
 * [learn the config](docs/en/tutorials/customize_config.md)
 * [customize dataset](docs/en/tutorials/customize_dataset.md)
 * [customize model](docs/en/tutorials/customize_models.md)
+* [useful tools](docs/en/tutorials/useful_toos.md)
 
 
 ## Model Zoo
@@ -98,8 +99,10 @@ A summary can be found in the [Model Zoo](docs/en/model_zoo.md) page.
 * [x] [Rotated RetinaNet-OBB/HBB](configs/rotated_retinanet/README.md) (ICCV'2017)
 * [x] [Rotated FasterRCNN-OBB](configs/rotated_faster_rcnn/README.md) (TPAMI'2017)
 * [x] [Rotated RepPoints-OBB](configs/rotated_reppoints/README.md) (ICCV'2019)
+* [x] [Rotated FCOS](configs/rotated_fcos/README.md) (ICCV'2019)
 * [x] [RoI Transformer](configs/roi_trans/README.md) (CVPR'2019)
 * [x] [Gliding Vertex](configs/gliding_vertex/README.md) (TPAMI'2020)
+* [x] [Rotated ATSS-OBB](configs/rotated_atss/README.md) (CVPR'2020)
 * [x] [CSL](configs/csl/README.md) (ECCV'2020)
 * [x] [R<sup>3</sup>Det](configs/r3det/README.md) (AAAI'2021)
 * [x] [S<sup>2</sup>A-Net](configs/s2anet/README.md) (TGRS'2021)

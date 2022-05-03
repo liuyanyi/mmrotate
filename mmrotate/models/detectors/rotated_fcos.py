@@ -5,9 +5,9 @@ from .single_stage import RotatedSingleStageDetector
 
 @ROTATED_DETECTORS.register_module()
 class RotatedFCOS(RotatedSingleStageDetector):
-    """Implementation of Rotated `FCOS.
+    """Implementation of Rotated `FCOS.`__
 
-    <https://arxiv.org/abs/1708.02002>`_
+    __ https://arxiv.org/abs/1904.01355
     """
 
     def __init__(self,
@@ -16,7 +16,7 @@ class RotatedFCOS(RotatedSingleStageDetector):
                  bbox_head,
                  train_cfg=None,
                  test_cfg=None,
-                 pretrained=None):
+                 pretrained=None,
+                 init_cfg=None):
         super(RotatedFCOS, self).__init__(backbone, neck, bbox_head, train_cfg,
-                                          test_cfg, pretrained)
-        # self.bbox_head.init_weights()
+                                          test_cfg, pretrained, init_cfg)

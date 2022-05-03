@@ -34,7 +34,7 @@ class OrientedRCNN(RotatedTwoStageDetector):
     def forward_dummy(self, img):
         """Used for computing network flops.
 
-        See `mmdetection/tools/analysis_tools/get_flops.py`
+        See `mmrotate/tools/analysis_tools/get_flops.py`
         """
         outs = ()
         # backbone
