@@ -5,9 +5,11 @@ from collections import Sequence
 from pathlib import Path
 
 import mmcv
+import numpy as np
 from mmcv import Config, DictAction
 from mmdet.datasets.builder import build_dataset
 
+from mmrotate.datasets import DOTADataset
 from mmrotate.core.visualization import imshow_det_rbboxes
 
 
@@ -83,14 +85,85 @@ def main():
     progress_bar = mmcv.ProgressBar(len(dataset))
     instance_num = 0
     img_num = len(dataset)
-    for item in dataset:
+    obj_ratios = []
+    sizes = []
+    small_num = 0
+    large_num = 0
+    cls_num = {
+        0: 0,
+        1: 0,
+        2: 0,
+        3: 0,
+        4: 0,
+        5: 0,
+        6: 0,
+        7: 0,
+        8: 0,
+        9: 0,
+        10: 0,
+        11: 0,
+        12: 0,
+        13: 0,
+        14: 0,
+    }
+    # i=0
+    for index, item in enumerate(dataset):
         gt_labels = item['gt_labels']
-        instance_num += gt_labels.size
-
+        for gt_label in gt_labels:
+            cls_num[gt_label] += 1
+        gt_bboxes = item['gt_bboxes']
+        for i in range(len(gt_labels)):
+            box = gt_bboxes[i]
+            # size = box[2] * box[3]
+            # if size <= 90000:
+            #     small_num += 1
+            # else:
+            #     large_num += 1
+            # sizes.append(size)
+            r1 = box[2] / box[3]
+            r2 = box[3] / box[2]
+            obj_ratios.append(np.maximum(r1, r2))
+        # instance_num += gt_labels.size
+        # i += 1
+        # if i>100:
+        #     break
+        # if index>500:
+        #     break
         progress_bar.update()
 
+    # 直方图
+    import matplotlib.pyplot as plt
+    plt.rc('font', family='Times New Roman')
+
+    # 调整figsize
+    # plt.figure(figsize=(8, 4))
+    # ax = plt.subplot(111)
+    # sizes = np.array(sizes)
+    # b = list(range(0, 20000, 200))
+    # ax.hist(sizes, bins=b)
+    # # ax.set_yscale('log')
+    # plt.show()
+
+    plt.figure(figsize=(8, 4))
+    ax = plt.subplot(111)
+    b2 = np.arange(1, 15, 1)
+    obj_ratios = np.array(obj_ratios)
+    ax.hist(obj_ratios, bins=b2, density=True)
+    # ax.set_yscale('log')
+
+    plt.show()
+
+    # plt.figure(figsize=(8, 4))
+    # ax = plt.subplot(111)
+    # plt.subplots_adjust(left=0.25)
+    # ax.barh(list(DOTADataset.CLASSES), list(cls_num.values()))
+    # plt.xticks(rotation=30)
+    # plt.show()
     print('\n')
-    print(instance_num)
+    print(cls_num)
+    print('small_num:', small_num)
+    print('large_num:', large_num)
+    print(0)
 
 
 if __name__ == '__main__':

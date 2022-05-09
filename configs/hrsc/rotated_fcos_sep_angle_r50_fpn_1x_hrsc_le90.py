@@ -3,7 +3,6 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 angle_version = 'le90'
-# fp16 = dict(loss_scale='dynamic')
 
 # model settings
 model = dict(
@@ -28,44 +27,33 @@ model = dict(
         num_outs=5,
         relu_before_extra_convs=True),
     bbox_head=dict(
-        type='OAFDHead',
+        type='RotatedFCOSHead',
         num_classes=1,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
+        center_sampling=False,
+        center_sample_radius=1.5,
+        norm_on_bbox=True,
+        centerness_on_reg=True,
+        separate_angle=True,
+        scale_angle=True,
         bbox_coder=dict(
             type='DistanceAnglePointBBoxCoder', angle_range=angle_version),
-        hbbox_coder=dict(type='DistancePointBBoxCoder', clip_border=False),
-        norm_on_bbox=True,
+        h_bbox_coder=dict(type='DistancePointBBoxCoder'),
         loss_cls=dict(
             type='FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
+        loss_bbox=dict(type='GIoULoss', loss_weight=1.0),
+        loss_angle=dict(type='L1Loss', loss_weight=0.2),
         loss_centerness=dict(
-            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0),
-        angel_coder=dict(
-            type='CSLCoder',
-            angle_version=angle_version,
-            omega=1,
-            window='gaussian',
-            radius=1),
-        loss_angle=dict(
-            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=0.2),
-        loss_bbox=dict(type='GIoULoss', loss_weight=1.0)),
+            type='CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
     # training and testing settings
-    train_cfg=dict(
-        assigner=dict(
-            type='MaxIoUAssigner',
-            pos_iou_thr=0.5,
-            neg_iou_thr=0.4,
-            min_pos_iou=0,
-            ignore_iof_thr=-1),
-        allowed_border=-1,
-        pos_weight=-1,
-        debug=False),
+    train_cfg=None,
     test_cfg=dict(
         nms_pre=2000,
         min_bbox_size=0,

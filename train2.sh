@@ -54,7 +54,7 @@
 # python tools/train.py configs/oafd/fpn_exp/21_hfab.py --work-dir=./work_dirs/hfa_exp/21_3
 #python tools/train.py configs/oafd/fpn_exp/22_hfae.py --work-dir=./work_dirs/hfa_exp/22_3
 
-# python tools/train.py configs/sffpn/oafdb_sffpn.py
+python tools/train.py /home/wangchen/liuyanyi/mmrotate/configs/s2anet/s2anet_r50_fpn_1x_dota_le135.py --work-dir=./work_dirs/s2a_v00/
 # python tools/train.py configs/sffpn/oafds_sffpn.py
 # python tools/train.py configs/sffpn/roi_trans_r50_sffpn_3x_hrsc_le90.py
 #python tools/train.py configs/sffpn/s2anet_r50_sffpn_3x_hrsc_le135.py
@@ -62,11 +62,11 @@
 # python tools/train.py configs/sffpn/oafdb_dota_sffpn.py
 # python tools/train.py configs/sffpn/oafds_dota_sffpn.py
 #python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_sffpn_3x_hrsc_le90.py
-
-python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_sffpn_6x_hrsc_le90.py
-python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_fpn_6x_hrsc_le90.py
-
-python tools/train.py configs/sffpn/oafdb_dota_sffpn.py
-python tools/train.py configs/sffpn/oafds_dota_sffpn.py
-python tools/train.py configs/sffpn/roi_trans_r50_sffpn_1x_dota_le90.py
-python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_sffpn_1x_dota_le90.py
+#
+#python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_sffpn_6x_hrsc_le90.py
+#python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_fpn_6x_hrsc_le90.py
+#
+#python tools/train.py configs/sffpn/oafdb_dota_sffpn.py
+#python tools/train.py configs/sffpn/oafds_dota_sffpn.py
+#python tools/train.py configs/sffpn/roi_trans_r50_sffpn_1x_dota_le90.py
+#python tools/train.py configs/sffpn/rotated_retinanet_obb_r50_sffpn_1x_dota_le90.py

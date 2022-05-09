@@ -108,7 +108,7 @@ class RoITransRoIHead(BaseModule, metaclass=ABCMeta):
                 if i > 0:
                     rois = rbbox2roi([proposals])
                 bbox_results = self._bbox_forward(i, x, rois)
-                proposals = torch.randn(1000, 6).to(proposals.device)
+                proposals = torch.randn(2000, 6).to(proposals.device)
                 outs = outs + (bbox_results['cls_score'],
                                bbox_results['bbox_pred'])
         return outs

@@ -28,4 +28,4 @@ model = dict(
             num_blocks=1,
             name='HFAB')
     ])
-work_dir = './work_dirs/sff_exp/hrsc/oafds'
+work_dir = './work_dirs/sff_exp/hrsc2/oafds'

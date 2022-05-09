@@ -1,5 +1,5 @@
 _base_ = [
-    '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_3x.py',
+    '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_6x.py',
     '../_base_/default_runtime.py'
 ]
 angle_version = 'le90'
@@ -117,4 +117,4 @@ evaluation = dict(
 optimizer = dict(
     _delete_=True, type='AdamW', lr=0.0001 / 4, weight_decay=0.0001)
 checkpoint_config = dict(interval=4)
-work_dir = './work_dirs/sff_exp/hrsc/oafdb'
+work_dir = './work_dirs/sff_exp/hrsc2/oafdb'

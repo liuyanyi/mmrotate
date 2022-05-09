@@ -59,6 +59,7 @@ def inference_detector_by_patches(model,
 
     results = []
     start = 0
+    progress_bar = mmcv.ProgressBar(len(patch_datas))
     while True:
         data = patch_datas[start:start + bs]
         data = collate(data, samples_per_gpu=len(data))
@@ -79,6 +80,7 @@ def inference_detector_by_patches(model,
         # forward the model
         with torch.no_grad():
             results.extend(model(return_loss=False, rescale=True, **data))
+        progress_bar.update(bs)
 
         if start + bs >= len(patch_datas):
             break
