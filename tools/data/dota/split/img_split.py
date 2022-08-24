@@ -15,7 +15,6 @@ from functools import partial, reduce
 from math import ceil
 from multiprocessing import Manager, Pool
 
-import BboxToolkit as bt
 import cv2
 import numpy as np
 from PIL import Image
@@ -589,15 +588,15 @@ def main():
     print(f'Finish splitting images in {int(stop - start)} second!!!')
     print(f'Total images number: {len(patch_infos)}')
 
-    print('Save information of split dataset!!!')
-    arg_dict = vars(args)
-    arg_dict.pop('base_json', None)
-    with open(osp.join(save_files, 'split_config.json'), 'w') as f:
-        json.dump(arg_dict, f, indent=4)
-        json_str = json.dumps(arg_dict, indent=4)
-        logger.info(json_str)
-    bt.save_pkl(osp.join(save_files, 'ori_annfile.pkl'), infos, None)
-    bt.save_pkl(osp.join(save_files, 'patch_annfile.pkl'), patch_infos, None)
+    # print('Save information of split dataset!!!')
+    # arg_dict = vars(args)
+    # arg_dict.pop('base_json', None)
+    # with open(osp.join(save_files, 'split_config.json'), 'w') as f:
+    #     json.dump(arg_dict, f, indent=4)
+    #     json_str = json.dumps(arg_dict, indent=4)
+    #     logger.info(json_str)
+    # bt.save_pkl(osp.join(save_files, 'ori_annfile.pkl'), infos, None)
+    # bt.save_pkl(osp.join(save_files, 'patch_annfile.pkl'), patch_infos, None)
 
 
 if __name__ == '    __main__':
