@@ -119,4 +119,4 @@ class DCNAlignModule(DeformConv2dPack):
 
     def forward(self, x, anchors):
         """Forward function."""
-        return super(DCNAlignModule, self).forward(x)
+        return [super(DCNAlignModule, self).forward(xi) for xi in x]
