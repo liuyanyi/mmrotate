@@ -2,8 +2,8 @@
 import torch
 from mmdet.models.task_modules.coders.base_bbox_coder import BaseBBoxCoder
 
+from mmrotate.core.bbox.transforms import norm_angle
 from mmrotate.registry import TASK_UTILS
-from ..transforms import norm_angle
 
 
 @TASK_UTILS.register_module()
@@ -23,7 +23,7 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
         self.clip_border = clip_border
         self.angle_version = angle_version
 
-    def encode(self, points, gt_bboxes, max_dis=None, eps=0.1):
+    def encode(self, points, gt_bboxes, angle=None, max_dis=None, eps=0.1):
         """Encode bounding box to distances.
 
         Args:
@@ -38,10 +38,16 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
         """
         assert points.size(0) == gt_bboxes.size(0)
         assert points.size(-1) == 2
-        assert gt_bboxes.size(-1) == 5
-        return self.obb2distance(points, gt_bboxes, max_dis, eps)
+        if angle is None:
+            assert gt_bboxes.size(-1) == 5
+            angle = gt_bboxes[..., 4:5]
+            gt_bboxes = gt_bboxes[..., :4]
+        else:
+            assert gt_bboxes.size(-1) == 4
+            assert angle.size(-1) == 1
+        return self.obb2distance(points, gt_bboxes, angle, max_dis, eps)
 
-    def decode(self, points, pred_bboxes, max_shape=None):
+    def decode(self, points, pred_bboxes, angle=None, max_shape=None):
         """Decode distance prediction to bounding box.
 
         Args:
@@ -60,14 +66,20 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
         """
         assert points.size(0) == pred_bboxes.size(0)
         assert points.size(-1) == 2
-        assert pred_bboxes.size(-1) == 5
+        if angle is None:
+            assert pred_bboxes.size(-1) == 5
+            angle = pred_bboxes[..., 4:5]
+            pred_bboxes = pred_bboxes[..., :4]
+        else:
+            assert pred_bboxes.size(-1) == 4
+            assert angle.size(-1) == 1
         if self.clip_border is False:
             max_shape = None
-        return self.distance2obb(points, pred_bboxes, max_shape,
+        return self.distance2obb(points, pred_bboxes, angle, max_shape,
                                  self.angle_version)
 
-    def obb2distance(self, points, distance, max_dis=None, eps=None):
-        ctr, wh, angle = torch.split(distance, [2, 2, 1], dim=1)
+    def obb2distance(self, points, distance, angle, max_dis=None, eps=None):
+        ctr, wh = torch.split(distance, [2, 2], dim=1)
 
         cos_angle, sin_angle = torch.cos(angle), torch.sin(angle)
         rot_matrix = torch.cat([cos_angle, sin_angle, -sin_angle, cos_angle],
@@ -93,9 +105,9 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
     def distance2obb(self,
                      points,
                      distance,
+                     angle,
                      max_shape=None,
                      angle_version='oc'):
-        distance, angle = distance.split([4, 1], dim=1)
 
         cos_angle, sin_angle = torch.cos(angle), torch.sin(angle)
         rot_matrix = torch.cat([cos_angle, -sin_angle, sin_angle, cos_angle],
