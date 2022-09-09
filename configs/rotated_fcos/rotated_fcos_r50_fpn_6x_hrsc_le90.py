@@ -1,5 +1,5 @@
 _base_ = [
-    '../_base_/datasets/dota.py', '../_base_/schedules/schedule_1x.py',
+    '../_base_/datasets/hrsc.py', '../_base_/schedules/schedule_6x.py',
     '../_base_/default_runtime.py'
 ]
 angle_version = 'le90'
@@ -34,35 +34,26 @@ model = dict(
         relu_before_extra_convs=True),
     bbox_head=dict(
         type='RotatedFCOSHead',
-        num_classes=15,
+        num_classes=1,
         in_channels=256,
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
-        center_sampling=True,
+        center_sampling=False,
         center_sample_radius=1.5,
         norm_on_bbox=True,
         centerness_on_reg=True,
-        separate_angle=True,
-        scale_angle=False,
-        angle_version=angle_version,
+        separate_angle=False,
+        scale_angle=True,
         bbox_coder=dict(
             type='DistanceAnglePointCoder', angle_version=angle_version),
-        angle_coder=dict(
-            type='CSLCoder',
-            angle_version=angle_version,
-            omega=1,
-            window='gaussian',
-            radius=1),
-        loss_angle=dict(
-            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=0.2),
         loss_cls=dict(
             type='mmdet.FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='mmdet.IoULoss', loss_weight=1.0),
+        loss_bbox=dict(type='RotatedIoULoss', loss_weight=1.0),
         loss_centerness=dict(
             type='mmdet.CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
     # training and testing settings
@@ -73,3 +64,22 @@ model = dict(
         score_thr=0.05,
         nms=dict(type='nms_rotated', iou_threshold=0.1),
         max_per_img=2000))
+
+file_client_args = dict(backend='disk')
+train_pipeline = [
+    dict(type='mmdet.LoadImageFromFile', file_client_args=file_client_args),
+    dict(type='mmdet.LoadAnnotations', with_bbox=True, box_type='qbox'),
+    dict(type='ConvertBoxType', box_type_mapping=dict(gt_bboxes='rbox')),
+    dict(type='mmdet.Resize', scale=(800, 800), keep_ratio=True),
+    dict(
+        type='RandomRotate',
+        prob=0.5,
+        angle_range=180,
+        rect_obj_labels=[9, 11]),
+    dict(
+        type='mmdet.RandomFlip',
+        prob=0.75,
+        direction=['horizontal', 'vertical', 'diagonal']),
+    dict(type='mmdet.PackDetInputs')
+]
+train_dataloader = dict(dataset=dict(pipeline=train_pipeline))
