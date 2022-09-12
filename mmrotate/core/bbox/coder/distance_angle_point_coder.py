@@ -10,8 +10,8 @@ from mmrotate.registry import TASK_UTILS
 class DistanceAnglePointCoder(BaseBBoxCoder):
     """Distance Angle Point BBox coder.
 
-    This coder encodes gt bboxes (x, y, w, h, angle) into (top, bottom, left,
-    right, angle) and decode it back to the original.
+    This coder encodes gt bboxes (x, y, w, h, theta) into (top, bottom, left,
+    right, theta) and decode it back to the original.
 
     Args:
         clip_border (bool, optional): Whether clip the objects outside the
@@ -28,7 +28,9 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
 
         Args:
             points (Tensor): Shape (N, 2), The format is [x, y].
-            gt_bboxes (Tensor): Shape (N, 5), The format is "xywha"
+            gt_bboxes (Tensor): Shape (N, 5) or (N, 4), The format is "xywht"
+                or "xywh", if shape is (N, 4), angle should not be None.
+            angle (Tensor): Shape (N, 1). Default None.
             max_dis (float): Upper bound of the distance. Default None.
             eps (float): a small value to ensure target < max_dis, instead <=.
                 Default 0.1.
@@ -55,6 +57,7 @@ class DistanceAnglePointCoder(BaseBBoxCoder):
             pred_bboxes (Tensor): Distance from the given point to 4
                 boundaries and angle (left, top, right, bottom, angle).
                 Shape (B, N, 5) or (N, 5)
+            angle (Tensor): Shape (N, 1) or (B, N, 1). Default None.
             max_shape (Sequence[int] or torch.Tensor or Sequence[
                 Sequence[int]],optional): Maximum bounds for boxes, specifies
                 (H, W, C) or (H, W). If priors shape is (B, N, 4), then
