@@ -39,8 +39,8 @@ model = dict(
         stacked_convs=4,
         feat_channels=256,
         strides=[8, 16, 32, 64, 128],
-        center_sampling=False,
-        center_sample_radius=1.5,
+        center_sampling=True,
+        center_sample_radius=3.0,
         norm_on_bbox=True,
         centerness_on_reg=True,
         separate_angle=False,
@@ -71,11 +71,7 @@ train_pipeline = [
     dict(type='mmdet.LoadAnnotations', with_bbox=True, box_type='qbox'),
     dict(type='ConvertBoxType', box_type_mapping=dict(gt_bboxes='rbox')),
     dict(type='mmdet.Resize', scale=(800, 800), keep_ratio=True),
-    dict(
-        type='RandomRotate',
-        prob=0.5,
-        angle_range=180,
-        rect_obj_labels=[9, 11]),
+    dict(type='RandomRotate', prob=0.5, angle_range=180),
     dict(
         type='mmdet.RandomFlip',
         prob=0.75,
