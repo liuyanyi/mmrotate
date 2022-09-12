@@ -58,6 +58,15 @@ class RotatedFCOSHead(FCOSHead):
             ``norm_cfg=dict(type='GN', num_groups=32, requires_grad=True)``.
         init_cfg (:obj:`ConfigDict` or dict or list[:obj:`ConfigDict` or \
             dict]): Initialization config dict.
+        angle_version (str): Angle representations. Defaults to 'le90'.
+        separate_angle (bool): If true, angle prediction is separated from
+            bbox regression loss. Default: False.
+        scale_angle (bool): If true, add scale to angle pred branch. Default: True.
+        angle_coder (:obj:`ConfigDict` or dict): Config of angle coder.
+        h_bbox_coder (dict): Config of horzional bbox coder,
+            only used when separate_angle is True.
+        loss_angle (:obj:`ConfigDict` or dict): Config of angle loss,
+            only used when separate_angle is True.
 
     Example:
         >>> self = RotatedFCOSHead(11, 7)
@@ -93,7 +102,8 @@ class RotatedFCOSHead(FCOSHead):
         if self.is_scale_angle:
             self.scale_angle = Scale(1.0)
 
-    def forward_single(self, x, scale, stride):
+    def forward_single(self, x: Tensor, scale: Scale,
+                       stride: int) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         """Forward features of a single scale level.
 
         Args:
@@ -178,7 +188,7 @@ class RotatedFCOSHead(FCOSHead):
             all_level_points, batch_gt_instances)
 
         num_imgs = cls_scores[0].size(0)
-        # flatten cls_scores, bbox_preds and centerness
+        # flatten cls_scores, bbox_preds, angle_preds and centerness
         flatten_cls_scores = [
             cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
             for cls_score in cls_scores
@@ -442,7 +452,7 @@ class RotatedFCOSHead(FCOSHead):
                 scale levels, each is a 4D-tensor, has shape
                 (batch_size, num_priors * 4, H, W).
             angle_preds (list[Tensor]): Box angle for each scale level
-                with shape (N, num_points * 1, H, W)
+                with shape (N, num_points * encode_size, H, W)
             score_factors (list[Tensor], optional): Score factor for
                 all scale level, each is a 4D-tensor, has shape
                 (batch_size, num_priors * 1, H, W). Defaults to None.
@@ -462,8 +472,8 @@ class RotatedFCOSHead(FCOSHead):
                   (num_instance, )
                 - labels (Tensor): Labels of bboxes, has a shape
                   (num_instances, ).
-                - bboxes (Tensor): Has a shape (num_instances, 4),
-                  the last dimension 4 arrange as (x1, y1, x2, y2).
+                - bboxes (Tensor): Has a shape (num_instances, 5),
+                  the last dimension 5 arrange as (x, y, w, h, t).
         """
         assert len(cls_scores) == len(bbox_preds)
 
@@ -532,7 +542,7 @@ class RotatedFCOSHead(FCOSHead):
                 all scale levels of a single image, each item has shape
                 (num_priors * 4, H, W).
             angle_pred_list (list[Tensor]): Box angle for a single scale
-                level with shape (N, num_points * 1, H, W).
+                level with shape (N, num_points * encode_size, H, W).
             score_factor_list (list[Tensor]): Score factor from all scale
                 levels of a single image, each item has shape
                 (num_priors * 1, H, W).
