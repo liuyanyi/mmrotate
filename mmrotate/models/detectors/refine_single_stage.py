@@ -8,6 +8,7 @@ from mmdet.structures import OptSampleList, SampleList
 from mmdet.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmengine.model import ModuleList
 from torch import Tensor
+from mmrotate.core.bbox.structures import RotatedBoxes
 
 from mmrotate.registry import MODELS
 
