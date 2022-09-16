@@ -95,13 +95,8 @@ class R3RefineHead(RetinaHead):
         frm_cfg (dict): Config of the feature refine module.
     """  # noqa: W605
 
-    def __init__(self,
-                 num_classes: int,
-                 in_channels: int,
-                 frm_cfg: dict = None,
-                 **kwargs) -> None:
-        super().__init__(
-            num_classes=num_classes, in_channels=in_channels, **kwargs)
+    def __init__(self, num_classes: int, in_channels: int, frm_cfg: dict=None, **kwargs)-> None:
+        super().__init__(num_classes=num_classes, in_channels= in_channels, **kwargs)
         self.feat_refine_module = TASK_UTILS.build(frm_cfg)
         self.bboxes_as_anchors = None
 
@@ -270,7 +265,7 @@ class R3RefineHead(RetinaHead):
 
         Args:
             x (list[Tensor]): feature maps of multiple scales.
-            rois (list[list[Tensor]]): input rbboxes of multiple
+            rois (list[list[Tensor]]):input rbboxes of multiple
                 scales of multiple images, output by former stages
                 and are to be refined.
 
