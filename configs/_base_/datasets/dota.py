@@ -1,6 +1,7 @@
 # dataset settings
 dataset_type = 'DOTADataset'
-data_root = 'data/split_ss_dota/'
+data_root = '/home/wangchen/liuyanyi/datasets/dota_mmrotate_ss/'
+# data_root = '/datasets/dota_mmrotate_ss/'
 file_client_args = dict(backend='disk')
 
 train_pipeline = [
@@ -36,7 +37,7 @@ test_pipeline = [
 ]
 train_dataloader = dict(
     batch_size=2,
-    num_workers=2,
+    num_workers=8,
     persistent_workers=True,
     sampler=dict(type='DefaultSampler', shuffle=True),
     batch_sampler=None,
@@ -49,41 +50,41 @@ train_dataloader = dict(
         filter_cfg=dict(filter_empty_gt=True),
         pipeline=train_pipeline))
 val_dataloader = dict(
-    batch_size=1,
-    num_workers=2,
+    batch_size=2,
+    num_workers=8,
     persistent_workers=True,
     drop_last=False,
     sampler=dict(type='DefaultSampler', shuffle=False),
     dataset=dict(
         type=dataset_type,
         data_root=data_root,
-        ann_file='trainval/annfiles/',
-        data_prefix=dict(img_path='trainval/images/'),
+        ann_file='val/annfiles/',
+        data_prefix=dict(img_path='val/images/'),
         img_shape=(1024, 1024),
         test_mode=True,
         pipeline=val_pipeline))
-test_dataloader = val_dataloader
+# test_dataloader = val_dataloader
 
 val_evaluator = dict(type='DOTAMetric', metric='mAP')
-test_evaluator = val_evaluator
+# test_evaluator = val_evaluator
 
 # inference on test dataset and format the output results
 # for submission. Note: the test set has no annotation.
-# test_dataloader = dict(
-#     batch_size=1,
-#     num_workers=2,
-#     persistent_workers=True,
-#     drop_last=False,
-#     sampler=dict(type='DefaultSampler', shuffle=False),
-#     dataset=dict(
-#         type=dataset_type,
-#         data_root=data_root,
-#         data_prefix=dict(img_path='test/images/'),
-#         img_shape=(1024, 1024),
-#         test_mode=True,
-#         pipeline=test_pipeline))
-# test_evaluator = dict(
-#     type='DOTAMetric',
-#     format_only=True,
-#     merge_patches=True,
-#     outfile_prefix='./work_dirs/dota/Task1')
+test_dataloader = dict(
+    batch_size=4,
+    num_workers=8,
+    persistent_workers=True,
+    drop_last=False,
+    sampler=dict(type='DefaultSampler', shuffle=False),
+    dataset=dict(
+        type=dataset_type,
+        data_root=data_root,
+        data_prefix=dict(img_path='test/images/'),
+        img_shape=(1024, 1024),
+        test_mode=True,
+        pipeline=test_pipeline))
+test_evaluator = dict(
+    type='DOTAMetric',
+    format_only=True,
+    merge_patches=True,
+    outfile_prefix='./work_dirs/qqq_dota/Task1')

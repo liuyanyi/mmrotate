@@ -2,6 +2,7 @@
 import torch
 from mmdet.models.task_modules.coders.base_bbox_coder import BaseBBoxCoder
 
+from mmrotate.core.bbox.structures import RotatedBoxes
 from mmrotate.core.bbox.transforms import norm_angle
 from mmrotate.registry import TASK_UTILS
 

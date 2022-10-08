@@ -3,7 +3,7 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 
-angle_version = 'le135'
+angle_version = 'le90'
 model = dict(
     type='RefineSingleStageDetector',
     data_preprocessor=dict(
@@ -32,33 +32,29 @@ model = dict(
         add_extra_convs='on_input',
         num_outs=5),
     bbox_head_init=dict(
-        type='S2AHead',
+        type='RotatedFCOSHead',
         num_classes=1,
         in_channels=256,
         stacked_convs=2,
         feat_channels=256,
-        anchor_generator=dict(
-            type='FakeRotatedAnchorGenerator',
-            angle_version=angle_version,
-            scales=[4],
-            ratios=[1.0],
-            strides=[8, 16, 32, 64, 128]),
+        strides=[8, 16, 32, 64, 128],
+        center_sampling=False,
+        center_sample_radius=3.0,
+        norm_on_bbox=True,
+        centerness_on_reg=True,
+        separate_angle=False,
+        scale_angle=True,
         bbox_coder=dict(
-            type='DeltaXYWHTRBBoxCoder',
-            angle_version=angle_version,
-            norm_factor=1,
-            edge_swap=False,
-            proj_xy=True,
-            target_means=(.0, .0, .0, .0, .0),
-            target_stds=(1.0, 1.0, 1.0, 1.0, 1.0),
-            use_box_type=False),
+            type='DistanceAnglePointCoder', angle_version=angle_version),
         loss_cls=dict(
             type='mmdet.FocalLoss',
             use_sigmoid=True,
             gamma=2.0,
             alpha=0.25,
             loss_weight=1.0),
-        loss_bbox=dict(type='mmdet.SmoothL1Loss', beta=0.11, loss_weight=1.0)),
+        loss_bbox=dict(type='RotatedIoULoss', loss_weight=1.0),
+        loss_centerness=dict(
+            type='mmdet.CrossEntropyLoss', use_sigmoid=True, loss_weight=1.0)),
     bbox_head_refine=[
         dict(
             type='S2ARefineHead',
@@ -77,8 +73,8 @@ model = dict(
             bbox_coder=dict(
                 type='DeltaXYWHTRBBoxCoder',
                 angle_version=angle_version,
-                norm_factor=1,
-                edge_swap=False,
+                norm_factor=None,
+                edge_swap=True,
                 proj_xy=True,
                 target_means=(0.0, 0.0, 0.0, 0.0, 0.0),
                 target_stds=(1.0, 1.0, 1.0, 1.0, 1.0)),
@@ -92,17 +88,7 @@ model = dict(
                 type='mmdet.SmoothL1Loss', beta=0.11, loss_weight=1.0))
     ],
     train_cfg=dict(
-        init=dict(
-            assigner=dict(
-                type='mmdet.MaxIoUAssigner',
-                pos_iou_thr=0.5,
-                neg_iou_thr=0.4,
-                min_pos_iou=0,
-                ignore_iof_thr=-1,
-                iou_calculator=dict(type='RBboxOverlaps2D')),
-            allowed_border=-1,
-            pos_weight=-1,
-            debug=False),
+        init=dict(),
         refine=[
             dict(
                 assigner=dict(

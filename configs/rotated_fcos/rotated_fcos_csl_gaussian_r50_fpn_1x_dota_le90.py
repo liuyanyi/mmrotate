@@ -13,7 +13,7 @@ model = dict(
         std=[58.395, 57.12, 57.375],
         bgr_to_rgb=True,
         pad_size_divisor=32,
-        boxlist2tensor=False),
+        boxtype2tensor=False),
     backbone=dict(
         type='mmdet.ResNet',
         depth=50,
@@ -55,7 +55,7 @@ model = dict(
             window='gaussian',
             radius=1),
         loss_angle=dict(
-            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=0.2),
+            type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=1.0),
         loss_cls=dict(
             type='mmdet.FocalLoss',
             use_sigmoid=True,

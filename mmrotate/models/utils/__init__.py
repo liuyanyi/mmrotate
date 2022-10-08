@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from .align import FRM, AlignConv, DCNAlignModule, PseudoAlignModule
+from .align import (FRM, AlignConv, DCNAlignModule, PseudoAlignModule,
+                    RepAlignConv, WeightedRepAlignConv)
 from .enn import (build_enn_divide_feature, build_enn_feature,
                   build_enn_norm_layer, build_enn_trivial_feature, ennAvgPool,
                   ennConv, ennInterpolate, ennMaxPool, ennReLU, ennTrivialConv)
@@ -10,5 +11,6 @@ __all__ = [
     'ORConv2d', 'RotationInvariantPooling', 'ennConv', 'ennReLU', 'ennAvgPool',
     'ennMaxPool', 'ennInterpolate', 'build_enn_divide_feature',
     'build_enn_feature', 'build_enn_norm_layer', 'build_enn_trivial_feature',
-    'ennTrivialConv', 'AlignConv', 'PseudoAlignModule', 'DCNAlignModule', 'FRM'
+    'ennTrivialConv', 'AlignConv', 'PseudoAlignModule', 'DCNAlignModule',
+    'FRM', 'RepAlignConv'
 ]

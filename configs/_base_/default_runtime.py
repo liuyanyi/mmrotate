@@ -8,15 +8,18 @@ default_hooks = dict(
     sampler_seed=dict(type='DistSamplerSeedHook'))
 
 env_cfg = dict(
-    cudnn_benchmark=False,
+    cudnn_benchmark=True,
     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
     dist_cfg=dict(backend='nccl'),
 )
 
 # TODO: Visualizer is not ready.
-# vis_backends = [dict(type='LocalVisBackend')]
-# visualizer = dict(
-#     type='DetLocalVisualizer', vis_backends=vis_backends, name='visualizer')
+vis_backends = [
+    dict(type='LocalVisBackend'),
+    dict(type='TensorboardVisBackend')
+]
+visualizer = dict(
+    type='RotLocalVisualizer', vis_backends=vis_backends, name='visualizer')
 log_processor = dict(type='LogProcessor', window_size=50, by_epoch=True)
 
 log_level = 'INFO'

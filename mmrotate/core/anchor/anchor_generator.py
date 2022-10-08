@@ -71,3 +71,14 @@ class PseudoRotatedAnchorGenerator(AnchorGenerator):
     def num_base_priors(self) -> None:
         """list[int]: total number of base priors in a feature grid"""
         return [1 for _ in self.strides]
+
+
+@TASK_UTILS.register_module()
+class HybAnchorGenerator(FakeRotatedAnchorGenerator):
+    """Non-Standard pseudo anchor generator that is used to generate valid
+    flags only!"""
+
+    @property
+    def num_base_priors(self) -> None:
+        """list[int]: total number of base priors in a feature grid"""
+        return [base_anchors.size(0) + 1 for base_anchors in self.base_anchors]

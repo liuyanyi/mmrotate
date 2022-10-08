@@ -158,7 +158,7 @@ def bbox2delta(proposals: RotatedBoxes,
         dw, dh, dt.
     """
     assert proposals.size() == gts.size()
-    proposals = proposals.tensor
+    proposals = get_box_tensor(proposals)
     gts = gts.regularize_boxes(angle_version)
     proposals = proposals.float()
     gts = gts.float()

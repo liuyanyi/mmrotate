@@ -5,6 +5,7 @@ from typing import List, Optional, Union
 
 import mmcv
 import numpy as np
+from mmdet.datasets import XMLDataset
 from mmengine.dataset import BaseDataset
 from mmengine.fileio import list_from_file
 
@@ -13,7 +14,7 @@ from mmrotate.registry import DATASETS
 
 
 @DATASETS.register_module()
-class HRSCDataset(BaseDataset):
+class HRSCDataset(XMLDataset):
     """HRSC dataset for detection.
 
     Note: There are two evaluation methods for HRSC datasets, which can be

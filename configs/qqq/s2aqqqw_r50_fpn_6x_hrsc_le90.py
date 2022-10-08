@@ -3,9 +3,9 @@ _base_ = [
     '../_base_/default_runtime.py'
 ]
 
-angle_version = 'le135'
+angle_version = 'le90'
 model = dict(
-    type='RefineSingleStageDetector',
+    type='WRSS',
     data_preprocessor=dict(
         type='mmdet.DetDataPreprocessor',
         mean=[123.675, 116.28, 103.53],
@@ -32,53 +32,81 @@ model = dict(
         add_extra_convs='on_input',
         num_outs=5),
     bbox_head_init=dict(
-        type='S2AHead',
+        type='QQQHead',
         num_classes=1,
         in_channels=256,
         stacked_convs=2,
         feat_channels=256,
-        anchor_generator=dict(
-            type='FakeRotatedAnchorGenerator',
-            angle_version=angle_version,
-            scales=[4],
-            ratios=[1.0],
-            strides=[8, 16, 32, 64, 128]),
+        strides=[8, 16, 32, 64, 128],
+        # center_sampling=False,
+        # center_sample_radius=1.5,
+        # norm_on_bbox=True,
+        # separate_angle=False,
+        # scale_angle=True,
+        # bbox_coder=dict(
+        #     type='DistanceAnglePointCoder', angle_version=angle_version),
+        center_sampling=False,
+        center_sample_radius=1.5,
+        norm_on_bbox=True,
+        separate_angle=False,
+        scale_angle=False,
+        angle_version=angle_version,
         bbox_coder=dict(
-            type='DeltaXYWHTRBBoxCoder',
-            angle_version=angle_version,
-            norm_factor=1,
-            edge_swap=False,
-            proj_xy=True,
-            target_means=(.0, .0, .0, .0, .0),
-            target_stds=(1.0, 1.0, 1.0, 1.0, 1.0),
-            use_box_type=False),
+            type='DistanceAnglePointCoder', angle_version=angle_version),
+        # angle_coder=dict(
+        #     type='CSLCoder',
+        #     angle_version=angle_version,
+        #     omega=1,
+        #     window='gaussian',
+        #     radius=1.5),
+        # angle_coder=dict(
+        #     type='DCLCoder',
+        #     angle_version=angle_version,
+        #     encode_size=7),
+        reg_max=16,
+        angle_coder=dict(type='DistributionAngleCoder', reg_max=16),
+        # loss_angle=dict(
+        #     type='SmoothFocalLoss', gamma=2.0, alpha=0.25, loss_weight=10.0),
+        loss_angle=dict(
+            type='mmdet.DistributionFocalLoss',
+            # reduction='sum',
+            loss_weight=0.20),
         loss_cls=dict(
-            type='mmdet.FocalLoss',
+            type='mmdet.QualityFocalLoss',
             use_sigmoid=True,
-            gamma=2.0,
-            alpha=0.25,
+            # reduction='sum',
+            beta=2.0,
             loss_weight=1.0),
-        loss_bbox=dict(type='mmdet.SmoothL1Loss', beta=0.11, loss_weight=1.0)),
+        loss_bbox=dict(
+            type='RotatedIoULoss',
+            # reduction='sum',
+            loss_weight=1.0)),
     bbox_head_refine=[
         dict(
-            type='S2ARefineHead',
+            type='MAWS2ASepBNRefineHead',
             num_classes=1,
             in_channels=256,
             stacked_convs=2,
             feat_channels=256,
             frm_cfg=dict(
-                type='AlignConv',
+                type='WeightedAlignConv',
                 feat_channels=256,
                 kernel_size=3,
                 strides=[8, 16, 32, 64, 128]),
+            # anchor_generator=dict(
+            #     type='PseudoRotatedAnchorGenerator',
+            #     strides=[8, 16, 32, 64, 128]),
             anchor_generator=dict(
                 type='PseudoRotatedAnchorGenerator',
+                # angle_version=angle_version,
+                # scales=[4],
+                # ratios=[1.0],
                 strides=[8, 16, 32, 64, 128]),
             bbox_coder=dict(
                 type='DeltaXYWHTRBBoxCoder',
                 angle_version=angle_version,
-                norm_factor=1,
-                edge_swap=False,
+                norm_factor=None,
+                edge_swap=True,
                 proj_xy=True,
                 target_means=(0.0, 0.0, 0.0, 0.0, 0.0),
                 target_stds=(1.0, 1.0, 1.0, 1.0, 1.0)),
@@ -88,23 +116,30 @@ model = dict(
                 gamma=2.0,
                 alpha=0.25,
                 loss_weight=1.0),
-            loss_bbox=dict(
-                type='mmdet.SmoothL1Loss', beta=0.11, loss_weight=1.0))
+            # loss_cls=dict(
+            #     type='mmdet.QualityFocalLoss',
+            #     use_sigmoid=True,
+            #     beta=2.0,
+            #     loss_weight=1.0),
+            # reg_decoded_bbox=True,
+            # loss_bbox=dict(
+            #     type='RotatedIoULoss', loss_weight=1.0),
+            reg_decoded_bbox=False,
+            loss_bbox=dict(type='mmdet.L1Loss', loss_weight=1.0),
+            # reg_max=10,
+            # angle_coder=dict(type='DistributionScaleAngleCoder', reg_max=10),
+            # loss_angle=dict(
+            #     type='mmdet.DistributionFocalLoss', loss_weight=0.20),
+        )
     ],
     train_cfg=dict(
-        init=dict(
-            assigner=dict(
-                type='mmdet.MaxIoUAssigner',
-                pos_iou_thr=0.5,
-                neg_iou_thr=0.4,
-                min_pos_iou=0,
-                ignore_iof_thr=-1,
-                iou_calculator=dict(type='RBboxOverlaps2D')),
-            allowed_border=-1,
-            pos_weight=-1,
-            debug=False),
+        init=None,
         refine=[
             dict(
+                # assigner=dict(
+                #     type='RotatedATSSAssigner',
+                #     iou_calculator=dict(type='RBboxOverlaps2D'),
+                #     topk=9),
                 assigner=dict(
                     type='mmdet.MaxIoUAssigner',
                     pos_iou_thr=0.5,
@@ -138,3 +173,10 @@ train_pipeline = [
     dict(type='mmdet.PackDetInputs')
 ]
 train_dataloader = dict(dataset=dict(pipeline=train_pipeline))
+
+custom_hooks = [dict(type='QQQHook', start_epoch=6)]
+# optim_wrapper = dict(type='AmpOptimWrapper')
+
+optim_wrapper = dict(
+    paramwise_cfg=dict(
+        norm_decay_mult=0, bias_decay_mult=0, bypass_duplicate=True))

@@ -1,5 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from .angle_coder import CSLCoder, PseudoAngleCoder
+from .angle_coder import CSLCoder, DCLCoder, PseudoAngleCoder
 from .delta_midpointoffset_rbbox_coder import MidpointOffsetCoder
 from .delta_xywh_hbbox_coder import DeltaXYWHHBBoxCoder
 from .delta_xywht_hbbox_coder import DeltaXYWHTHBBoxCoder

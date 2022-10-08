@@ -350,15 +350,18 @@ class RotatedBoxes(BaseBoxes):
 
     def find_inside_points(self,
                            points: Tensor,
-                           is_aligned: bool = False) -> BoolTensor:
-        """Find inside box points. Boxes dimension must be 2.
+                           is_aligned: bool = False,
+                           eps: float = 0.01) -> BoolTensor:
+        """Find inside box points.
 
+        Boxes dimension must be 2.
         Args:
             points (Tensor): Points coordinates. Has shape of (m, 2).
             is_aligned (bool): Whether ``points`` has been aligned with boxes
                 or not. If True, the length of boxes and ``points`` should be
                 the same. Defaults to False.
-
+            eps (float): Make sure the points are inside not on the boundary.
+                Defaults to 0.01.
         Returns:
             BoolTensor: A BoolTensor indicating whether the box is inside the
             image. Assuming the boxes has shape of (n, 5), if ``is_aligned``
@@ -367,25 +370,22 @@ class RotatedBoxes(BaseBoxes):
         """
         boxes = self.tensor
         assert boxes.dim() == 2, 'boxes dimension must be 2.'
-
         if not is_aligned:
             boxes = boxes[None, :, :]
             points = points[:, None, :]
         else:
             assert boxes.size(0) == points.size(0)
-
         ctrs, wh, t = torch.split(boxes, [2, 2, 1], dim=-1)
         cos_value, sin_value = torch.cos(t), torch.sin(t)
         matrix = torch.cat([cos_value, sin_value, -sin_value, cos_value],
                            dim=-1).reshape(*boxes.shape[:-1], 2, 2)
-
         offset = points - ctrs
         offset = torch.matmul(matrix, offset[..., None])
         offset = offset.squeeze(-1)
         offset_x, offset_y = offset[..., 0], offset[..., 1]
         w, h = wh[..., 0], wh[..., 1]
-        return (offset_x <= w / 2) & (offset_x >= - w / 2) & \
-            (offset_y <= h / 2) & (offset_y >= - h / 2)
+        return (offset_x <= w / 2 - eps) & (offset_x >= - w / 2 + eps) & \
+            (offset_y <= h / 2 - eps) & (offset_y >= - h / 2 + eps)
 
     @staticmethod
     def overlaps(boxes1: BaseBoxes,

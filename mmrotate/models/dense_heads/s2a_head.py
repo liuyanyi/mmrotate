@@ -3,13 +3,17 @@ from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+from matplotlib import pyplot as plt
 from mmcv.cnn import ConvModule
 from mmdet.models.dense_heads.retina_head import RetinaHead
-from mmdet.models.utils import select_single_mlvl
+from mmdet.models.utils import (images_to_levels, multi_apply,
+                                select_single_mlvl)
+from mmdet.structures.bbox import cat_boxes, get_box_tensor
 from mmdet.utils import InstanceList, OptInstanceList
 from mmengine.config import ConfigDict
 from torch import Tensor
 
+from mmrotate.core import rbbox_overlaps
 from mmrotate.core.bbox.structures import RotatedBoxes
 from mmrotate.registry import MODELS, TASK_UTILS
 from ..utils import ORConv2d, RotationInvariantPooling
@@ -42,7 +46,7 @@ class S2AHead(RetinaHead):
 
         device = cls_scores[0].device
         featmap_sizes = [cls_scores[i].shape[-2:] for i in range(num_levels)]
-        mlvl_anchors = self.anchor_generator.grid_priors(
+        mlvl_anchors = self.prior_generator.grid_priors(
             featmap_sizes, device=device)
 
         bboxes_list = [[] for _ in range(num_imgs)]
@@ -365,3 +369,259 @@ class S2ARefineHead(RetinaHead):
             for img_id in range(num_imgs):
                 bboxes_list[img_id].append(refined_bbox[img_id].detach())
         return bboxes_list
+
+
+@MODELS.register_module()
+class WS2ARefineHead(S2ARefineHead):
+
+    def feature_refine(self, x: List[Tensor], rois: List[List[Tensor]],
+                       scores: List[Tensor]) -> List[Tensor]:
+        """Refine the input feature use feature refine module.
+
+        Args:
+            x (list[Tensor]): feature maps of multiple scales.
+            rois (list[list[Tensor]]): input rbboxes of multiple
+                scales of multiple images, output by former stages
+                and are to be refined.
+
+        Returns:
+            list[Tensor]: refined feature maps of multiple scales.
+        """
+        return self.feat_refine_module(x, rois, scores)
+
+    def show_feat(self, x, x_r):
+        plt.figure(figsize=(6, 10))
+        for i in range(5):
+            plt.subplot(5, 2, 1 + 2 * i)
+            feat = x[i].sum(1).squeeze(0).cpu().numpy()
+            plt.imshow(feat)
+
+            plt.subplot(5, 2, 2 + 2 * i)
+            feat = x_r[i].sum(1).squeeze(0).cpu().numpy()
+            plt.imshow(feat)
+
+        plt.tight_layout()
+        plt.show()
+
+    # def loss_by_feat(self,
+    #                  cls_scores: List[Tensor],
+    #                  bbox_preds: List[Tensor],
+    #                  batch_gt_instances: InstanceList,
+    #                  batch_img_metas: List[dict],
+    #                  batch_gt_instances_ignore: OptInstanceList = None,
+    #                  rois: List[Tensor] = None) -> dict:
+    #     """Calculate the loss based on the features extracted by the detection
+    #     head.
+    #
+    #     Args:
+    #         cls_scores (list[Tensor]): Box scores for each scale level
+    #             has shape (N, num_anchors * num_classes, H, W).
+    #         bbox_preds (list[Tensor]): Box energies / deltas for each scale
+    #             level with shape (N, num_anchors * 4, H, W).
+    #         batch_gt_instances (list[:obj:`InstanceData`]): Batch of
+    #             gt_instance. It usually includes ``bboxes`` and ``labels``
+    #             attributes.
+    #         batch_img_metas (list[dict]): Meta information of each image, e.g.,
+    #             image size, scaling factor, etc.
+    #         batch_gt_instances_ignore (list[:obj:`InstanceData`], optional):
+    #             Batch of gt_instances_ignore. It includes ``bboxes`` attribute
+    #             data that is ignored during training and testing.
+    #             Defaults to None.
+    #         rois (list[Tensor])
+    #
+    #     Returns:
+    #         dict: A dictionary of loss components.
+    #     """
+    #     assert rois is not None
+    #     self.bboxes_as_anchors = rois
+    #     featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+    #     assert len(featmap_sizes) == self.prior_generator.num_levels
+    #
+    #     device = cls_scores[0].device
+    #
+    #     anchor_list, valid_flag_list = self.get_anchors(
+    #         featmap_sizes, batch_img_metas, device=device)
+    #     cls_reg_targets = self.get_targets(
+    #         anchor_list,
+    #         valid_flag_list,
+    #         batch_gt_instances,
+    #         batch_img_metas,
+    #         batch_gt_instances_ignore=batch_gt_instances_ignore)
+    #     (labels_list, label_weights_list, bbox_targets_list, bbox_weights_list,
+    #      avg_factor) = cls_reg_targets
+    #
+    #     num_imgs = cls_scores[0].size(0)
+    #     # flatten cls_scores, bbox_preds, angle_preds and centerness
+    #     flatten_cls_scores = [
+    #         cls_score.permute(0, 2, 3, 1).reshape(-1, self.cls_out_channels)
+    #         for cls_score in cls_scores
+    #     ]
+    #     flatten_bbox_preds = [
+    #         bbox_pred.permute(0, 2, 3, 1).reshape(-1, 5)
+    #         for bbox_pred in bbox_preds
+    #     ]
+    #     flatten_labels = [
+    #         label.reshape(-1)
+    #         for label in labels_list
+    #     ]
+    #     flatten_label_weights = [
+    #         label_weight.reshape(-1)
+    #         for label_weight in label_weights_list
+    #     ]
+    #     flatten_bbox_targets = [
+    #         bbox_targets.reshape(-1, 5)
+    #         for bbox_targets in bbox_targets_list
+    #     ]
+    #
+    #     flatten_cls_scores = torch.cat(flatten_cls_scores)
+    #     flatten_bbox_preds = torch.cat(flatten_bbox_preds)
+    #     flatten_labels = torch.cat(flatten_labels)
+    #     flatten_label_weights = torch.cat(flatten_label_weights)
+    #     flatten_bbox_targets = torch.cat(flatten_bbox_targets)
+    #
+    #     # concat all level anchors and flags to a single tensor
+    #     concat_anchor_list = []
+    #     for i in range(len(anchor_list)):
+    #         concat_anchor_list.append(cat_boxes(anchor_list[i]))
+    #     flatten_anchors = cat_boxes(concat_anchor_list)
+    #
+    #
+    #     bg_class_ind = self.num_classes
+    #     pos_inds = ((flatten_labels >= 0)
+    #                 & (flatten_labels < bg_class_ind)).nonzero().squeeze(1)
+    #     score = flatten_label_weights.new_zeros(flatten_labels.shape)
+    #
+    #     if len(pos_inds) > 0:
+    #         bbox_targets = flatten_bbox_targets
+    #         bbox_pred = flatten_bbox_preds
+    #         pos_bbox_targets = bbox_targets[pos_inds]
+    #         pos_bbox_pred = bbox_pred[pos_inds]
+    #         anchors = flatten_anchors
+    #         pos_anchors = anchors[pos_inds]
+    #
+    #         weight_targets = flatten_cls_scores.detach().sigmoid()
+    #         weight_targets = weight_targets.max(dim=1, keepdim=True)[0][
+    #             pos_inds]
+    #
+    #         pos_decoded_bbox_preds = self.bbox_coder.decode(pos_anchors,
+    #                                                         pos_bbox_pred)
+    #         pos_decoded_bbox_preds = get_box_tensor(pos_decoded_bbox_preds)
+    #
+    #         pos_decoded_bbox_targets = pos_bbox_targets
+    #         if self.reg_decoded_bbox:
+    #             pos_bbox_pred = pos_decoded_bbox_preds
+    #         else:
+    #             pos_decoded_bbox_targets = self.bbox_coder.decode(pos_anchors,
+    #                                                               pos_bbox_targets)
+    #             pos_decoded_bbox_targets = get_box_tensor(
+    #                 pos_decoded_bbox_targets)
+    #
+    #         score[pos_inds] = rbbox_overlaps(
+    #             pos_decoded_bbox_preds.detach(),
+    #             pos_decoded_bbox_targets,
+    #             is_aligned=True)
+    #
+    #         # regression loss
+    #         loss_bbox = self.loss_bbox(
+    #             pos_bbox_pred,
+    #             pos_bbox_targets,
+    #             weight=weight_targets,
+    #             avg_factor=1.0)
+    #     else:
+    #         loss_bbox = flatten_bbox_preds.sum() * 0
+    #
+    #     # cls (qfl) loss
+    #     loss_cls = self.loss_cls(
+    #         flatten_cls_scores, (flatten_labels, score),
+    #         weight=flatten_label_weights,
+    #         avg_factor=avg_factor)
+    #
+    #     return dict(loss_cls=loss_cls, loss_bbox=loss_bbox)
+    #
+    # def loss_by_feat_single(self, cls_score: Tensor, bbox_pred: Tensor,
+    #                         anchors: Tensor, labels: Tensor,
+    #                         label_weights: Tensor, bbox_targets: Tensor,
+    #                         bbox_weights: Tensor, avg_factor: int) -> tuple:
+    #     """Calculate the loss of a single scale level based on the features
+    #     extracted by the detection head.
+    #
+    #     Args:
+    #         cls_score (Tensor): Box scores for each scale level
+    #             Has shape (N, num_anchors * num_classes, H, W).
+    #         bbox_pred (Tensor): Box energies / deltas for each scale
+    #             level with shape (N, num_anchors * 4, H, W).
+    #         anchors (Tensor): Box reference for each scale level with shape
+    #             (N, num_total_anchors, 4).
+    #         labels (Tensor): Labels of each anchors with shape
+    #             (N, num_total_anchors).
+    #         label_weights (Tensor): Label weights of each anchor with shape
+    #             (N, num_total_anchors)
+    #         bbox_targets (Tensor): BBox regression targets of each anchor
+    #             weight shape (N, num_total_anchors, 4).
+    #         bbox_weights (Tensor): BBox regression loss weights of each anchor
+    #             with shape (N, num_total_anchors, 4).
+    #         avg_factor (int): Average factor that is used to average the loss.
+    #
+    #     Returns:
+    #         tuple: loss components.
+    #     """
+    #     # classification loss
+    #     labels = labels.reshape(-1)
+    #     label_weights = label_weights.reshape(-1)
+    #     cls_score = cls_score.permute(0, 2, 3,
+    #                                   1).reshape(-1, self.cls_out_channels)
+    #
+    #     bg_class_ind = self.num_classes
+    #     pos_inds = ((labels >= 0)
+    #                 & (labels < bg_class_ind)).nonzero().squeeze(1)
+    #     score = label_weights.new_zeros(labels.shape)
+    #
+    #     if len(pos_inds) > 0:
+    #         target_dim = bbox_targets.size(-1)
+    #         bbox_targets = bbox_targets.reshape(-1, target_dim)
+    #         bbox_pred = bbox_pred.permute(0, 2, 3,
+    #                                       1).reshape(-1,
+    #                                                  self.bbox_coder.encode_size)
+    #         pos_bbox_targets = bbox_targets[pos_inds]
+    #         pos_bbox_pred = bbox_pred[pos_inds]
+    #         anchors = anchors.reshape(-1, anchors.size(-1))
+    #         pos_anchors = anchors[pos_inds]
+    #
+    #         weight_targets = cls_score.detach().sigmoid()
+    #         weight_targets = weight_targets.max(dim=1, keepdim=True)[0][
+    #             pos_inds]
+    #
+    #         pos_decoded_bbox_preds = self.bbox_coder.decode(pos_anchors,
+    #                                                         pos_bbox_pred)
+    #         pos_decoded_bbox_preds = get_box_tensor(pos_decoded_bbox_preds)
+    #
+    #         pos_decoded_bbox_targets = pos_bbox_targets
+    #         if self.reg_decoded_bbox:
+    #             pos_bbox_pred = pos_decoded_bbox_preds
+    #         else:
+    #             pos_decoded_bbox_targets = self.bbox_coder.decode(pos_anchors,
+    #                                                               pos_bbox_targets)
+    #             pos_decoded_bbox_targets = get_box_tensor(
+    #                 pos_decoded_bbox_targets)
+    #
+    #         score[pos_inds] = rbbox_overlaps(
+    #             pos_decoded_bbox_preds.detach(),
+    #             pos_decoded_bbox_targets,
+    #             is_aligned=True)
+    #
+    #         # regression loss
+    #         loss_bbox = self.loss_bbox(
+    #             pos_bbox_pred,
+    #             pos_bbox_targets,
+    #             weight=weight_targets,
+    #             avg_factor=1.0)
+    #     else:
+    #         loss_bbox = bbox_pred.sum() * 0
+    #
+    #     # cls (qfl) loss
+    #     loss_cls = self.loss_cls(
+    #         cls_score, (labels, score),
+    #         weight=label_weights,
+    #         avg_factor=avg_factor)
+    #
+    #     return loss_cls, loss_bbox

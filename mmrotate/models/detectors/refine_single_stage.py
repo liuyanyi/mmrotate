@@ -1,12 +1,16 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+import sys
 from collections import Sequence
 from typing import List, Tuple, Union
 
-from mmdet.models.detectors.base import BaseDetector
+import matplotlib.pyplot as plt
+import torch
+from mmdet.models.detectors.base import BaseDetector, ForwardResults
 from mmdet.models.utils import unpack_gt_instances
 from mmdet.structures import OptSampleList, SampleList
 from mmdet.utils import ConfigType, OptConfigType, OptMultiConfig
 from mmengine.model import ModuleList
+from mmengine.visualization import Visualizer
 from torch import Tensor
 
 from mmrotate.registry import MODELS
@@ -151,6 +155,10 @@ class RefineSingleStageDetector(BaseDetector):
         rois = self.bbox_head_init.filter_bboxes(*outs)
         for i in range(self.num_refine_stages):
             x_refine = self.bbox_head_refine[i].feature_refine(x, rois)
+
+            # if sys.gettrace():
+            #     self.show_feat(x, x_refine)
+
             outs = self.bbox_head_refine[i](x_refine)
             if i + 1 in range(self.num_refine_stages):
                 rois = self.bbox_head_refine[i].refine_bboxes(*outs, rois)
@@ -160,6 +168,8 @@ class RefineSingleStageDetector(BaseDetector):
         ]
         predictions = self.bbox_head_refine[-1].predict_by_feat(
             *outs, rois=rois, batch_img_metas=batch_img_metas, rescale=rescale)
+        # predictions = self.bbox_head_init.predict_by_feat(
+        #     *outs, batch_img_metas=batch_img_metas, rescale=rescale)
 
         batch_data_samples = self.add_pred_to_datasample(
             batch_data_samples, predictions)
@@ -203,3 +213,200 @@ class RefineSingleStageDetector(BaseDetector):
         if self.with_neck:
             x = self.neck(x)
         return x
+
+    def show_feat(self, x, x_r):
+        level = len(x)
+
+        if isinstance(x[0], tuple):
+            fn = len(x[0])
+        else:
+            fn = 1
+        for j in range(fn):
+            plt.figure(figsize=(6, 10))
+
+            for i in range(level):
+                plt.subplot(5, 2, 1 + 2 * i)
+                feat = x[i][j][0].sum(0).squeeze(0).cpu().detach().numpy()
+
+                plt.imshow(feat)
+
+                plt.subplot(5, 2, 2 + 2 * i)
+                feat = x_r[i][j][0].sum(0).squeeze(0).cpu().detach().numpy()
+                plt.imshow(feat)
+
+            plt.suptitle('fn{}'.format(j))
+            plt.tight_layout()
+            plt.show()
+
+
+@MODELS.register_module()
+class WRSS(RefineSingleStageDetector):
+
+    def loss(self, batch_inputs: Tensor,
+             batch_data_samples: SampleList) -> Union[dict, list]:
+        """Calculate losses from a batch of inputs and data samples.
+
+        Args:
+            batch_inputs (Tensor): Input images of shape (N, C, H, W).
+                These should usually be mean centered and std scaled.
+            batch_data_samples (list[:obj:`DetDataSample`]): The batch
+                data samples. It usually includes information such
+                as `gt_instance` or `gt_panoptic_seg` or `gt_sem_seg`.
+
+        Returns:
+            dict: A dictionary of loss components.
+        """
+        x = self.extract_feat(batch_inputs)
+
+        losses = dict()
+        outs = self.bbox_head_init(x, with_feats=True)
+        out_preds, out_feats = outs[:-2], outs[-2:]
+        outputs = unpack_gt_instances(batch_data_samples)
+        (batch_gt_instances, batch_gt_instances_ignore,
+         batch_img_metas) = outputs
+        loss_inputs = out_preds + (batch_gt_instances, batch_img_metas,
+                                   batch_gt_instances_ignore)
+        init_losses = self.bbox_head_init.loss_by_feat(*loss_inputs)
+        keys = init_losses.keys()
+        for key in list(keys):
+            if 'loss' in key and 'init' not in key:
+                init_losses[f'{key}_init'] = init_losses.pop(key)
+        losses.update(init_losses)
+
+        rois = self.bbox_head_init.filter_bboxes(*out_preds)
+        scores = out_preds[0]
+        for i in range(self.num_refine_stages):
+            weight = self.train_cfg.stage_loss_weights[i]
+            out_feats_list = []
+            for lvl in range(len(out_feats[0])):
+                inp = tuple(out_feats[j][lvl] for j in range(len(out_feats)))
+                out_feats_list.append(inp)
+            x_refine = self.bbox_head_refine[i].feature_refine(
+                out_feats_list, rois, scores)
+            # self.show_feat(out_feats_list, x_refine)
+            outs = self.bbox_head_refine[i](x_refine, with_feats=True)
+            out_preds, out_feats = outs[:-2], outs[-2:]
+            loss_inputs = out_preds + (batch_gt_instances, batch_img_metas,
+                                       batch_gt_instances_ignore)
+            refine_losses = self.bbox_head_refine[i].loss_by_feat(
+                *loss_inputs, rois=rois)
+            keys = refine_losses.keys()
+            for key in list(keys):
+                if 'loss' in key and 'refine' not in key:
+                    loss = refine_losses.pop(key)
+                    if isinstance(loss, Sequence):
+                        loss = [item * weight for item in loss]
+                    else:
+                        loss = loss * weight
+                    refine_losses[f'{key}_refine_{i}'] = loss
+            losses.update(refine_losses)
+
+            if i + 1 in range(self.num_refine_stages):
+                rois = self.bbox_head_refine[i].refine_bboxes(
+                    *out_preds, rois=rois)
+
+        return losses
+
+    def predict(self,
+                batch_inputs: Tensor,
+                batch_data_samples: SampleList,
+                rescale: bool = True) -> SampleList:
+        """Predict results from a batch of inputs and data samples with post-
+        processing.
+
+        Args:
+            batch_inputs (Tensor): Inputs with shape (N, C, H, W).
+            batch_data_samples (List[:obj:`DetDataSample`]): The Data
+                Samples. It usually includes information such as
+                `gt_instance`, `gt_panoptic_seg` and `gt_sem_seg`.
+            rescale (bool): Whether to rescale the results.
+                Defaults to True.
+
+        Returns:
+            list[:obj:`DetDataSample`]: Detection results of the
+            input images. Each DetDataSample usually contain
+            'pred_instances'. And the ``pred_instances`` usually
+            contains following keys.
+
+            - scores (Tensor): Classification scores, has a shape
+              (num_instance, )
+            - labels (Tensor): Labels of bboxes, has a shape
+              (num_instances, ).
+            - bboxes (Tensor): Has a shape (num_instances, 5),
+              the last dimension 5 arrange as (x, y, w, h, t).
+        """
+        x = self.extract_feat(batch_inputs)
+        outs = self.bbox_head_init(x, with_feats=True)
+
+        out_preds, out_feats = outs[:-2], outs[-2:]
+        #
+        rois = self.bbox_head_init.filter_bboxes(*out_preds)
+        scores = out_preds[0]
+        for i in range(self.num_refine_stages):
+            out_feats_list = []
+            for lvl in range(len(out_feats[0])):
+                inp = tuple(out_feats[j][lvl] for j in range(len(out_feats)))
+                out_feats_list.append(inp)
+
+            x_refine = self.bbox_head_refine[i].feature_refine(
+                out_feats_list, rois, scores)
+
+            # if sys.gettrace():
+            #     self.show_feat(out_feats_list, x_refine)
+
+            outs = self.bbox_head_refine[i](x_refine, with_feats=True)
+            out_preds, out_feats = outs[:-2], outs[-2:]
+
+            if i + 1 in range(self.num_refine_stages):
+                rois = self.bbox_head_refine[i].refine_bboxes(*out_preds, rois)
+
+        batch_img_metas = [
+            data_samples.metainfo for data_samples in batch_data_samples
+        ]
+        predictions = self.bbox_head_refine[-1].predict_by_feat(
+            *out_preds,
+            rois=rois,
+            batch_img_metas=batch_img_metas,
+            rescale=rescale)
+        # predictions = self.bbox_head_init.predict_by_feat(
+        #     *outs, batch_img_metas=batch_img_metas, rescale=rescale)
+        # *out_preds, batch_img_metas=batch_img_metas, rescale=rescale)
+
+        batch_data_samples = self.add_pred_to_datasample(
+            batch_data_samples, predictions)
+        return batch_data_samples
+
+    def _forward(
+            self,
+            batch_inputs: Tensor,
+            batch_data_samples: OptSampleList = None) -> Tuple[List[Tensor]]:
+        """Network forward process. Usually includes backbone, neck and head
+        forward without any post-processing.
+
+         Args:
+            batch_inputs (Tensor): Inputs with shape (N, C, H, W).
+
+        Returns:
+            tuple[list]: A tuple of features from ``bbox_head`` forward.
+        """
+        x = self.extract_feat(batch_inputs)
+        outs = self.bbox_head_init(x, with_feats=True)
+
+        out_preds, out_feats = outs[:-2], outs[-2:]
+        scores = out_preds[0]
+
+        rois = self.bbox_head_init.filter_bboxes(*out_preds)
+        for i in range(self.num_refine_stages):
+            out_feats_list = []
+            for lvl in range(len(out_feats[0])):
+                inp = tuple(out_feats[j][lvl] for j in range(len(out_feats)))
+                out_feats_list.append(inp)
+
+            x_refine = self.bbox_head_refine[i].feature_refine(
+                out_feats_list, rois, scores)
+            outs = self.bbox_head_refine[i](x_refine, with_feats=True)
+            out_preds, out_feats = outs[:-2], outs[-2:]
+            if i + 1 in range(self.num_refine_stages):
+                rois = self.bbox_head_refine[i].refine_bboxes(*out_preds, rois)
+
+        return outs

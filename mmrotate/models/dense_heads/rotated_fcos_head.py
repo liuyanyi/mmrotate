@@ -6,8 +6,9 @@ import torch
 import torch.nn as nn
 from mmcv.cnn import Scale
 from mmdet.models.dense_heads import FCOSHead
-from mmdet.models.utils import (cat_boxes, filter_scores_and_topk, multi_apply,
+from mmdet.models.utils import (filter_scores_and_topk, multi_apply,
                                 select_single_mlvl)
+from mmdet.structures.bbox import cat_boxes
 from mmdet.utils import ConfigType, InstanceList, OptInstanceList, reduce_mean
 from mmengine import ConfigDict
 from mmengine.structures import InstanceData
@@ -662,3 +663,59 @@ class RotatedFCOSHead(FCOSHead):
             rescale=rescale,
             with_nms=with_nms,
             img_meta=img_meta)
+
+    def filter_bboxes(
+            self,
+            cls_scores: List[Tensor],
+            bbox_preds: List[Tensor],
+            angle_preds: List[Tensor],
+            score_factors: Optional[List[Tensor]] = None
+    ) -> List[List[Tensor]]:
+        """This function will be used in S2ANet, whose num_anchors=1.
+
+        Args:
+            cls_scores (list[Tensor]): Box scores for each scale level
+                Has shape (N, num_classes, H, W)
+            bbox_preds (list[Tensor]): Box energies / deltas for each scale
+                level with shape (N, 5, H, W)
+
+        Returns:
+            list[list[Tensor]]: refined rbboxes of each level of each image.
+        """
+        num_levels = len(cls_scores)
+        assert num_levels == len(bbox_preds) == len(angle_preds)
+        num_imgs = cls_scores[0].size(0)
+        for i in range(num_levels):
+            assert num_imgs == cls_scores[i].size(0) == bbox_preds[i].size(0)
+
+        device = cls_scores[0].device
+        featmap_sizes = [cls_scores[i].shape[-2:] for i in range(num_levels)]
+        mlvl_priors = self.prior_generator.grid_priors(
+            featmap_sizes, device=device)
+
+        bboxes_list = [[] for _ in range(num_imgs)]
+
+        for lvl in range(num_levels):
+            if self.norm_on_bbox and self.training:
+                bbox_pred = bbox_preds[lvl] * self.strides[lvl]
+            else:
+                bbox_pred = bbox_preds[lvl]
+            bbox_pred = bbox_pred.permute(0, 2, 3, 1)
+            bbox_pred = bbox_pred.reshape(num_imgs, -1, 4)
+
+            angle_pred = angle_preds[lvl]
+            angle_pred = angle_pred.permute(0, 2, 3, 1)
+            angle_pred = self.angle_coder.decode(angle_pred)
+            # angle_pred = self.integral(angle_pred)
+            angle_pred = angle_pred.reshape(num_imgs, -1, 1)
+
+            bbox_pred = torch.cat([bbox_pred, angle_pred], dim=-1)
+
+            priors = mlvl_priors[lvl]
+
+            for img_id in range(num_imgs):
+                bbox_pred_i = bbox_pred[img_id]
+                decode_bbox_i = self.bbox_coder.decode(priors, bbox_pred_i)
+                bboxes_list[img_id].append(decode_bbox_i.detach())
+
+        return bboxes_list
